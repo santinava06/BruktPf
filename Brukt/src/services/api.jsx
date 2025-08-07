@@ -2,6 +2,11 @@ import { getToken, logout, isTokenValid } from './auth';
 
 const BASE_URL = import.meta.env.VITE_API_URL || 'https://bruktpf-backend.onrender.com/api';
 
+// Debug - mostrar la URL que se está usando
+console.log('🔍 Frontend Debug:');
+console.log('VITE_API_URL env var:', import.meta.env.VITE_API_URL);
+console.log('BASE_URL final:', BASE_URL);
+
 // Función base para hacer peticiones a la API
 export async function apiRequest(endpoint, options = {}) {
   const token = getToken();
