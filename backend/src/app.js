@@ -16,12 +16,18 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS
 
 const corsOptions = {
   origin: function (origin, callback) {
+    console.log('🔍 CORS Debug:');
+    console.log('Origin recibido:', origin);
+    console.log('Origins permitidos:', allowedOrigins);
+    
     // Permitir requests sin origin (como mobile apps o Postman)
     if (!origin) return callback(null, true);
     
     if (allowedOrigins.indexOf(origin) !== -1) {
+      console.log('✅ Origin permitido');
       callback(null, true);
     } else {
+      console.log('❌ Origin NO permitido');
       callback(new Error('Not allowed by CORS'));
     }
   },
