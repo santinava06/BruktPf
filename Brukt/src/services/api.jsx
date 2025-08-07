@@ -1,13 +1,15 @@
 import { getToken, logout, isTokenValid } from './auth';
 
 // Determinar URL del backend
-let BASE_URL = import.meta.env.VITE_API_URL || 'https://bruktpf-backend.onrender.com/api';
+const isLocalhost = typeof window !== 'undefined' && 
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 
-// Forzar URL de producción si estamos en Vercel
-if (typeof window !== 'undefined' && window.location.hostname.includes('vercel.app')) {
-  console.log('🚀 Detectado entorno Vercel, forzando URL de producción');
-  BASE_URL = 'https://bruktpf-backend.onrender.com/api';
-}
+const BASE_URL = isLocalhost 
+  ? 'http://localhost:3001/api'  // Desarrollo local
+  : 'https://bruktpf-backend.onrender.com/api';  // Producción (Vercel)
+
+console.log('🌍 Entorno detectado:', isLocalhost ? 'Local' : 'Producción');
+console.log('🔗 Hostname:', typeof window !== 'undefined' ? window.location.hostname : 'server');
 
 // Debug - mostrar la URL que se está usando
 console.log('🔍 Frontend Debug:');
