@@ -1,6 +1,6 @@
 import { getToken, logout, isTokenValid } from './auth';
 
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+const BASE_URL = import.meta.env.VITE_API_URL || 'https://bruktpf-backend.onrender.com/api';
 
 // Función base para hacer peticiones a la API
 export async function apiRequest(endpoint, options = {}) {
