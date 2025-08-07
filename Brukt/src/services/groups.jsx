@@ -1,6 +1,12 @@
 import { getToken } from './auth';
 
-const API_URL = 'http://localhost:3001/api/groups';
+// Determinar URL del backend
+const isLocalhost = typeof window !== 'undefined' && 
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+const API_URL = isLocalhost 
+  ? 'http://localhost:3001/api/groups'  // Desarrollo local
+  : 'https://bruktpf-backend.onrender.com/api/groups';  // Producción (Vercel)
 
 // Funciones para grupos
 export async function createGroup(groupData) {

@@ -25,7 +25,15 @@ function SimpleLogin() {
 
     try {
       // Petición directa sin usar el servicio
-      const response = await fetch('http://localhost:3001/api/auth/login', {
+      // Determinar URL del backend
+      const isLocalhost = typeof window !== 'undefined' && 
+        (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+      
+      const apiUrl = isLocalhost 
+        ? 'http://localhost:3001/api/auth/login'  // Desarrollo local
+        : 'https://bruktpf-backend.onrender.com/api/auth/login';  // Producción (Vercel)
+      
+      const response = await fetch(apiUrl, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',

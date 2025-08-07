@@ -1,4 +1,13 @@
-const API_URL = 'http://localhost:3001/api/auth';
+// Determinar URL del backend para auth
+const isLocalhost = typeof window !== 'undefined' && 
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+const API_URL = isLocalhost 
+  ? 'http://localhost:3001/api/auth'  // Desarrollo local
+  : 'https://bruktpf-backend.onrender.com/api/auth';  // Producción (Vercel)
+
+console.log('🔐 Auth Service - Entorno detectado:', isLocalhost ? 'Local' : 'Producción');
+console.log('🔐 Auth Service - API_URL:', API_URL);
 
 export async function login(email, password) {
   try {

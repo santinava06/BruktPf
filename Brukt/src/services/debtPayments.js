@@ -1,4 +1,10 @@
-const API_URL = 'http://localhost:3001/api';
+// Determinar URL del backend
+const isLocalhost = typeof window !== 'undefined' && 
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+const API_URL = isLocalhost 
+  ? 'http://localhost:3001/api'  // Desarrollo local
+  : 'https://bruktpf-backend.onrender.com/api';  // Producción (Vercel)
 
 // Crear pago de deuda
 export async function createDebtPayment(groupId, paymentData) {
