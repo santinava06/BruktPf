@@ -10,7 +10,7 @@ dotenv.config();
 const app = express();
 
 // Configuración de CORS
-const allowedOrigins = process.env.ALLOWED_ORIGINS 
+const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',')
   : ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:4173', 'http://127.0.0.1:5173', 'http://127.0.0.1:3000'];
 
@@ -19,10 +19,10 @@ const corsOptions = {
     console.log('🔍 CORS Debug:');
     console.log('Origin recibido:', origin);
     console.log('Origins permitidos:', allowedOrigins);
-    
+
     // Permitir requests sin origin (como mobile apps o Postman)
     if (!origin) return callback(null, true);
-    
+
     if (allowedOrigins.indexOf(origin) !== -1) {
       console.log('✅ Origin permitido');
       callback(null, true);
@@ -51,7 +51,7 @@ app.get('/', (req, res) => {
 // Middleware de manejo de errores global
 app.use((err, req, res, next) => {
   console.error(err.stack);
-  res.status(500).json({ 
+  res.status(500).json({
     error: 'Algo salió mal en el servidor',
     message: process.env.NODE_ENV === 'development' ? err.message : undefined
   });
@@ -69,7 +69,7 @@ const startServer = async () => {
   try {
     // Sincronizar la base de datos
     await syncDatabase();
-    
+
     // Iniciar el servidor
     app.listen(PORT, () => {
       console.log(`🚀 Servidor backend ejecutándose en puerto ${PORT}`);

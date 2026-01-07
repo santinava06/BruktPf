@@ -24,7 +24,12 @@ import {
   ListItem,
   ListItemText,
   ListItemSecondaryAction,
-  InputAdornment
+  InputAdornment,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Collapse
 } from '@mui/material';
 import {
   Group as GroupIcon,
@@ -35,9 +40,14 @@ import {
   Create as CreateIcon,
   Description as DescriptionIcon,
   Delete as DeleteIcon,
-  MoreVert as MoreVertIcon
+  MoreVert as MoreVertIcon,
+  Search as SearchIcon,
+  FilterList as FilterListIcon,
+  Sort as SortIcon,
+  Clear as ClearIcon
 } from '@mui/icons-material';
 import { createGroup, getUserGroups, inviteToGroup, acceptInvitation, rejectInvitation, getPendingInvitations, deleteGroup } from '../services/groups';
+import { GroupsListSkeleton } from '../components/SkeletonLoader';
 
 function Groups() {
   const navigate = useNavigate();
@@ -54,6 +64,11 @@ function Groups() {
   const [inviteEmail, setInviteEmail] = useState('');
   const [groupErrors, setGroupErrors] = useState({});
   const [deleteDialog, setDeleteDialog] = useState({ open: false, group: null });
+  
+  // Estados para búsqueda y filtrado
+  const [searchTerm, setSearchTerm] = useState('');
+  const [sortBy, setSortBy] = useState('recent'); // recent, alphabetical, members
+  const [filterOpen, setFilterOpen] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -227,6 +242,43 @@ function Groups() {
     setDeleteDialog({ open: false, group: null });
   };
 
+  // Funciones de búsqueda y filtrado
+  const filteredAndSortedGroups = React.useMemo(() => {
+    let filtered = groups;
+
+    // Filtrar por término de búsqueda
+    if (searchTerm.trim()) {
+      const searchLower = searchTerm.toLowerCase();
+      filtered = filtered.filter(group => 
+        (group.nombre || group.name || '').toLowerCase().includes(searchLower) ||
+        (group.descripcion || group.description || '').toLowerCase().includes(searchLower)
+      );
+    }
+
+    // Ordenar
+    const sorted = [...filtered].sort((a, b) => {
+      switch (sortBy) {
+        case 'alphabetical':
+          return (a.nombre || a.name || '').localeCompare(b.nombre || b.name || '');
+        case 'members':
+          return (b.members?.length || 0) - (a.members?.length || 0);
+        case 'recent':
+        default:
+          // Ordenar por fecha de creación (más reciente primero)
+          const dateA = new Date(a.created_at || a.createdAt || 0);
+          const dateB = new Date(b.created_at || b.createdAt || 0);
+          return dateB - dateA;
+      }
+    });
+
+    return sorted;
+  }, [groups, searchTerm, sortBy]);
+
+  const handleClearFilters = () => {
+    setSearchTerm('');
+    setSortBy('recent');
+  };
+
   const GroupCard = ({ group }) => (
     <Card 
       sx={{ 
@@ -246,8 +298,17 @@ function Groups() {
         }
       }}
       onClick={() => navigate(`/groups/${group.id}`)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          navigate(`/groups/${group.id}`);
+        }
+      }}
+      aria-label={`Ver detalles del grupo ${group.nombre || group.name}`}
     >
-      <CardContent sx={{ flexGrow: 1, position: 'relative', p: 3 }}>
+      <CardContent sx={{ flexGrow: 1, position: 'relative', p: { xs: 2, sm: 3 } }}>
         {/* Botón de eliminar */}
         <Box 
           sx={{ 
@@ -278,6 +339,7 @@ function Groups() {
                 color: 'white'
               }
             }}
+            aria-label={`Eliminar grupo ${group.nombre || group.name}`}
           >
             <DeleteIcon fontSize="small" />
           </IconButton>
@@ -455,6 +517,29 @@ function Groups() {
     </Card>
   );
 
+  if (loading) {
+    return (
+      <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
+        <Box sx={{ mb: 4 }}>
+          <Typography 
+            variant="h3" 
+            sx={{ 
+              fontWeight: 800,
+              color: 'primary.main',
+              mb: 1
+            }}
+          >
+            Dashboard - Mis Grupos
+          </Typography>
+          <Typography variant="h6" color="text.secondary" sx={{ fontWeight: 400 }}>
+            Cargando tus grupos...
+          </Typography>
+        </Box>
+        <GroupsListSkeleton count={6} />
+      </Container>
+    );
+  }
+
   return (
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
       {/* Header */}
@@ -463,14 +548,14 @@ function Groups() {
           variant="h3" 
           sx={{ 
             fontWeight: 800,
-            color: '#133A1A',
+            color: 'primary.main',
             mb: 1
           }}
         >
-          Mis Grupos
+          Dashboard - Mis Grupos
         </Typography>
         <Typography variant="h6" color="text.secondary" sx={{ fontWeight: 400 }}>
-          Organiza y gestiona tus gastos compartidos
+          Organiza y gestiona tus gastos compartidos con familiares, amigos o compañeros
         </Typography>
       </Box>
 
@@ -517,11 +602,11 @@ function Groups() {
           display="flex" 
           justifyContent="space-between" 
           alignItems="center" 
-          sx={{ mb: 3 }}
+          sx={{ mb: 3, flexWrap: 'wrap', gap: 2 }}
         >
           <Box>
             <Typography variant="h5" sx={{ fontWeight: 700, mb: 0.5 }}>
-              Mis Grupos ({groups.length})
+              Mis Grupos ({filteredAndSortedGroups.length}{searchTerm || sortBy !== 'recent' ? ` de ${groups.length}` : ''})
             </Typography>
             <Typography variant="body2" color="text.secondary">
               {groups.length === 0 ? 'No tienes grupos aún' : 'Gestiona tus grupos de gastos'}
@@ -535,31 +620,159 @@ function Groups() {
               borderRadius: 2,
               textTransform: 'none',
               fontWeight: 600,
-              px: 3,
+              px: { xs: 2, sm: 3 },
               py: 1,
-              bgcolor: '#133A1A',
+              bgcolor: 'primary.main',
               color: 'white !important',
               '&:hover': {
-                bgcolor: '#1a4d2a',
-                color: 'white !important'
-              },
-              '& .MuiButton-label': {
+                bgcolor: 'primary.dark',
                 color: 'white !important'
               }
             }}
+            aria-label="Crear nuevo grupo"
           >
             Crear Grupo
           </Button>
         </Box>
 
-        {/* Lista de grupos */}
-        <Grid container spacing={3}>
-          {groups.map((group) => (
-            <Grid item xs={12} sm={6} md={4} key={group.id}>
-              <GroupCard group={group} />
+        {/* Búsqueda y Filtros */}
+        <Paper 
+          elevation={0}
+          sx={{ 
+            p: 2, 
+            mb: 3,
+            borderRadius: 2,
+            border: '1px solid',
+            borderColor: 'divider',
+            bgcolor: 'background.paper'
+          }}
+        >
+          <Grid container spacing={{ xs: 2, sm: 2, md: 2 }} alignItems="center">
+            <Grid item xs={12} sm={12} md={5}>
+              <TextField
+                fullWidth
+                placeholder="Buscar grupos..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <SearchIcon color="action" />
+                    </InputAdornment>
+                  ),
+                  endAdornment: searchTerm && (
+                    <InputAdornment position="end">
+                      <IconButton
+                        size="small"
+                        onClick={() => setSearchTerm('')}
+                        aria-label="Limpiar búsqueda"
+                      >
+                        <ClearIcon fontSize="small" />
+                      </IconButton>
+                    </InputAdornment>
+                  ),
+                }}
+                sx={{ bgcolor: 'background.paper' }}
+                aria-label="Campo de búsqueda de grupos"
+              />
             </Grid>
-          ))}
-        </Grid>
+            <Grid item xs={12} sm={6} md={4}>
+              <FormControl fullWidth>
+                <InputLabel>Ordenar por</InputLabel>
+                <Select
+                  value={sortBy}
+                  label="Ordenar por"
+                  onChange={(e) => setSortBy(e.target.value)}
+                  aria-label="Ordenar grupos por"
+                >
+                  <MenuItem value="recent">Más recientes</MenuItem>
+                  <MenuItem value="alphabetical">Alfabético (A-Z)</MenuItem>
+                  <MenuItem value="members">Más miembros</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <Box display="flex" gap={1} justifyContent={{ xs: 'flex-start', sm: 'flex-end', md: 'flex-end' }} flexWrap="wrap">
+                {(searchTerm || sortBy !== 'recent') && (
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    startIcon={<ClearIcon />}
+                    onClick={handleClearFilters}
+                    sx={{ textTransform: 'none' }}
+                    aria-label="Limpiar todos los filtros"
+                  >
+                    Limpiar filtros
+                  </Button>
+                )}
+              </Box>
+            </Grid>
+          </Grid>
+        </Paper>
+
+        {/* Lista de grupos */}
+        {filteredAndSortedGroups.length > 0 ? (
+          <Grid container spacing={{ xs: 2, sm: 3, md: 3 }}>
+            {filteredAndSortedGroups.map((group) => (
+              <Grid item xs={12} sm={6} md={4} lg={3} key={group.id}>
+                <GroupCard group={group} />
+              </Grid>
+            ))}
+          </Grid>
+        ) : (
+          <Paper 
+            sx={{ 
+              p: 6, 
+              textAlign: 'center',
+              borderRadius: 3,
+              border: '2px dashed',
+              borderColor: 'divider',
+              bgcolor: 'background.paper'
+            }}
+          >
+            <Box 
+              sx={{ 
+                width: 80, 
+                height: 80, 
+                borderRadius: '50%', 
+                bgcolor: 'action.hover', 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center',
+                mx: 'auto',
+                mb: 3
+              }}
+            >
+              <SearchIcon sx={{ fontSize: 40, color: 'text.secondary' }} />
+            </Box>
+            <Typography variant="h6" color="text.secondary" gutterBottom sx={{ fontWeight: 600 }}>
+              {searchTerm ? 'No se encontraron grupos' : 'No tienes grupos aún'}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+              {searchTerm 
+                ? 'Intenta con otros términos de búsqueda' 
+                : 'Crea un grupo para comenzar a compartir gastos con otros'}
+            </Typography>
+            {!searchTerm && (
+              <Button
+                variant="contained"
+                startIcon={<AddIcon />}
+                onClick={() => setCreateDialog(true)}
+                sx={{ 
+                  borderRadius: 2,
+                  textTransform: 'none',
+                  fontWeight: 600,
+                  bgcolor: 'primary.main',
+                  '&:hover': {
+                    bgcolor: 'primary.dark'
+                  }
+                }}
+              >
+                Crear tu primer grupo
+              </Button>
+            )}
+          </Paper>
+        )}
 
         {/* Estado vacío */}
         {groups.length === 0 && !loading && (
@@ -710,7 +923,10 @@ function Groups() {
               borderRadius: 2,
               textTransform: 'none',
               fontWeight: 600,
-                
+              color: 'white !important',
+              '&:hover': {
+                color: 'white !important'
+              }
             }}
           >
             Cancelar
@@ -754,7 +970,7 @@ function Groups() {
           />
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setInviteDialog({ open: false, groupId: null })}>Cancelar</Button>
+          <Button onClick={() => setInviteDialog({ open: false, groupId: null })} sx={{color: 'white !important'}}>Cancelar</Button>
           <Button 
             onClick={handleInviteToGroup} 
             variant="contained"
@@ -891,7 +1107,11 @@ function Groups() {
             sx={{ 
               borderRadius: 2,
               textTransform: 'none',
-              fontWeight: 600
+              fontWeight: 600,
+              color: 'white !important',
+              '&:hover': {
+                color: 'white !important'
+              }
             }}
           >
             Cancelar
@@ -913,14 +1133,48 @@ function Groups() {
         </DialogActions>
       </Dialog>
 
-      {/* Snackbars */}
-      <Snackbar open={!!success} autoHideDuration={3000} onClose={() => setSuccess('')}>
-        <Alert severity="success" sx={{ width: '100%' }}>
+      {/* Snackbars mejorados */}
+      <Snackbar 
+        open={!!success} 
+        autoHideDuration={3000} 
+        onClose={() => setSuccess('')}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      >
+        <Alert 
+          severity="success" 
+          onClose={() => setSuccess('')}
+          variant="filled"
+          sx={{ 
+            width: '100%',
+            borderRadius: 2,
+            boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+            '& .MuiAlert-icon': {
+              fontSize: 24
+            }
+          }}
+        >
           {success}
         </Alert>
       </Snackbar>
-      <Snackbar open={!!error} autoHideDuration={4000} onClose={() => setError('')}>
-        <Alert severity="error" sx={{ width: '100%' }}>
+      <Snackbar 
+        open={!!error} 
+        autoHideDuration={5000} 
+        onClose={() => setError('')}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      >
+        <Alert 
+          severity="error" 
+          onClose={() => setError('')}
+          variant="filled"
+          sx={{ 
+            width: '100%',
+            borderRadius: 2,
+            boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+            '& .MuiAlert-icon': {
+              fontSize: 24
+            }
+          }}
+        >
           {error}
         </Alert>
       </Snackbar>

@@ -1,8 +1,8 @@
 import express from 'express';
-import { 
-  register, 
-  login, 
-  getProfile, 
+import {
+  register,
+  login,
+  getProfile,
   updateProfile,
   changePassword,
   forgotPassword,

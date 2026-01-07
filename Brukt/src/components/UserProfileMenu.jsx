@@ -51,8 +51,7 @@ function UserProfileMenu() {
 
   const handleSettings = () => {
     handleMenuClose();
-    // TODO: Navigate to settings page
-    console.log('Settings clicked');
+    navigate('/settings');
   };
 
   // Get user initials for avatar
@@ -123,19 +122,19 @@ function UserProfileMenu() {
         anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
       >
         {/* User Info Header */}
-        <Box sx={{ 
-          p: 2.5, 
+        <Box sx={{
+          p: 2.5,
           background: 'linear-gradient(135deg, #133A1A 0%, #1a4d2a 100%)',
           color: 'white'
         }}>
-          <Typography variant="subtitle1" sx={{ 
-            fontWeight: 600, 
+          <Typography variant="subtitle1" sx={{
+            fontWeight: 600,
             color: 'white',
             mb: 0.5
           }}>
             {user?.nombre || 'Usuario'}
           </Typography>
-          <Typography variant="body2" sx={{ 
+          <Typography variant="body2" sx={{
             color: 'rgba(255, 255, 255, 0.8)',
             fontSize: '0.8rem'
           }}>
@@ -143,9 +142,9 @@ function UserProfileMenu() {
           </Typography>
         </Box>
 
-        <MenuItem 
-          onClick={handleProfile} 
-          sx={{ 
+        <MenuItem
+          onClick={handleProfile}
+          sx={{
             py: 1.5,
             px: 2.5,
             transition: 'all 0.2s ease',
@@ -157,18 +156,18 @@ function UserProfileMenu() {
           <ListItemIcon>
             <PersonIcon sx={{ color: '#133A1A', fontSize: '1.2rem' }} />
           </ListItemIcon>
-          <ListItemText 
-            primary="Mi Perfil" 
-            primaryTypographyProps={{ 
+          <ListItemText
+            primary="Mi Perfil"
+            primaryTypographyProps={{
               fontSize: '0.875rem',
               fontWeight: 500
             }}
           />
         </MenuItem>
 
-        <MenuItem 
-          onClick={handleSettings} 
-          sx={{ 
+        <MenuItem
+          onClick={handleSettings}
+          sx={{
             py: 1.5,
             px: 2.5,
             transition: 'all 0.2s ease',
@@ -180,18 +179,18 @@ function UserProfileMenu() {
           <ListItemIcon>
             <SettingsIcon sx={{ color: '#133A1A', fontSize: '1.2rem' }} />
           </ListItemIcon>
-          <ListItemText 
-            primary="Configuración" 
-            primaryTypographyProps={{ 
+          <ListItemText
+            primary="Configuración"
+            primaryTypographyProps={{
               fontSize: '0.875rem',
               fontWeight: 500
             }}
           />
         </MenuItem>
 
-        <MenuItem 
-          onClick={handleChangePassword} 
-          sx={{ 
+        <MenuItem
+          onClick={handleChangePassword}
+          sx={{
             py: 1.5,
             px: 2.5,
             transition: 'all 0.2s ease',
@@ -203,9 +202,9 @@ function UserProfileMenu() {
           <ListItemIcon>
             <LockIcon sx={{ color: '#133A1A', fontSize: '1.2rem' }} />
           </ListItemIcon>
-          <ListItemText 
-            primary="Cambiar Contraseña" 
-            primaryTypographyProps={{ 
+          <ListItemText
+            primary="Cambiar Contraseña"
+            primaryTypographyProps={{
               fontSize: '0.875rem',
               fontWeight: 500
             }}
@@ -214,9 +213,9 @@ function UserProfileMenu() {
 
         <Divider sx={{ my: 1, mx: 2 }} />
 
-        <MenuItem 
-          onClick={handleLogout} 
-          sx={{ 
+        <MenuItem
+          onClick={handleLogout}
+          sx={{
             py: 1.5,
             px: 2.5,
             transition: 'all 0.2s ease',
@@ -228,9 +227,9 @@ function UserProfileMenu() {
           <ListItemIcon>
             <LogoutIcon sx={{ color: '#d32f2f', fontSize: '1.2rem' }} />
           </ListItemIcon>
-          <ListItemText 
-            primary="Cerrar Sesión" 
-            primaryTypographyProps={{ 
+          <ListItemText
+            primary="Cerrar Sesión"
+            primaryTypographyProps={{
               fontSize: '0.875rem',
               fontWeight: 500,
               color: '#d32f2f'

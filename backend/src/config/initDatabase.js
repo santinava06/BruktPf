@@ -1,18 +1,19 @@
 import { sequelize, testConnection } from './database.js';
 import { setupAssociations } from './associations.js';
+import { seedCategories } from './seeders.js';
 
 // Función para sincronizar todos los modelos
 const syncDatabase = async () => {
   try {
     // Probar conexión
     await testConnection();
-    
+
     // Configurar asociaciones
     setupAssociations();
-    
+
     // Sincronizar todos los modelos (sin forzar recreación)
     await sequelize.sync({ force: false, alter: true });
-    
+
     console.log('✅ Base de datos sincronizada correctamente');
     console.log('📊 Tablas creadas:');
     console.log('   - users');
@@ -20,8 +21,13 @@ const syncDatabase = async () => {
     console.log('   - expense_groups');
     console.log('   - group_members');
     console.log('   - group_expenses');
+    console.log('   - group_expenses');
     console.log('   - debt_payments');
-    
+    console.log('   - categories');
+
+    // Ejecutar seeders
+    await seedCategories();
+
   } catch (error) {
     console.error('❌ Error al sincronizar la base de datos:', error);
     throw error;

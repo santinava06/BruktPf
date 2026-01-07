@@ -10,16 +10,16 @@ export const register = async (req, res) => {
 
     // Validar datos de entrada
     if (!nombre || !apellido || !email || !password) {
-      return res.status(400).json({ 
-        error: 'Nombre, apellido, email y contraseña son requeridos' 
+      return res.status(400).json({
+        error: 'Nombre, apellido, email y contraseña son requeridos'
       });
     }
 
     // Verificar si el usuario ya existe por email
     const existingUserByEmail = await User.findOne({ where: { email } });
     if (existingUserByEmail) {
-      return res.status(400).json({ 
-        error: 'El email ya está registrado' 
+      return res.status(400).json({
+        error: 'El email ya está registrado'
       });
     }
 
@@ -52,7 +52,7 @@ export const register = async (req, res) => {
 
   } catch (error) {
     console.error('Error en registro:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Error interno del servidor',
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
@@ -66,24 +66,24 @@ export const login = async (req, res) => {
 
     // Validar datos de entrada
     if (!email || !password) {
-      return res.status(400).json({ 
-        error: 'Email y contraseña son requeridos' 
+      return res.status(400).json({
+        error: 'Email y contraseña son requeridos'
       });
     }
 
     // Buscar usuario por email
     const user = await User.findOne({ where: { email } });
     if (!user) {
-      return res.status(401).json({ 
-        error: 'Credenciales inválidas' 
+      return res.status(401).json({
+        error: 'Credenciales inválidas'
       });
     }
 
     // Verificar contraseña
     const isValidPassword = await user.comparePassword(password);
     if (!isValidPassword) {
-      return res.status(401).json({ 
-        error: 'Credenciales inválidas' 
+      return res.status(401).json({
+        error: 'Credenciales inválidas'
       });
     }
 
@@ -108,7 +108,7 @@ export const login = async (req, res) => {
 
   } catch (error) {
     console.error('Error en login:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Error interno del servidor',
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
@@ -125,8 +125,8 @@ export const getProfile = async (req, res) => {
     });
 
     if (!user) {
-      return res.status(404).json({ 
-        error: 'Usuario no encontrado' 
+      return res.status(404).json({
+        error: 'Usuario no encontrado'
       });
     }
 
@@ -144,7 +144,7 @@ export const getProfile = async (req, res) => {
 
   } catch (error) {
     console.error('Error al obtener perfil:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Error interno del servidor',
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
@@ -159,35 +159,35 @@ export const updateProfile = async (req, res) => {
 
     const user = await User.findByPk(userId);
     if (!user) {
-      return res.status(404).json({ 
-        error: 'Usuario no encontrado' 
+      return res.status(404).json({
+        error: 'Usuario no encontrado'
       });
     }
 
     // Validar username si se está actualizando
     if (username) {
       if (!/^[a-zA-Z0-9_]+$/.test(username)) {
-        return res.status(400).json({ 
-          error: 'El nombre de usuario solo puede contener letras, números y guiones bajos' 
+        return res.status(400).json({
+          error: 'El nombre de usuario solo puede contener letras, números y guiones bajos'
         });
       }
 
       if (username.length < 3 || username.length > 20) {
-        return res.status(400).json({ 
-          error: 'El nombre de usuario debe tener entre 3 y 20 caracteres' 
+        return res.status(400).json({
+          error: 'El nombre de usuario debe tener entre 3 y 20 caracteres'
         });
       }
 
       // Verificar si el username ya está en uso por otro usuario
-      const existingUser = await User.findOne({ 
-        where: { 
+      const existingUser = await User.findOne({
+        where: {
           username,
           id: { [Op.ne]: userId }
         }
       });
       if (existingUser) {
-        return res.status(400).json({ 
-          error: 'El nombre de usuario ya está en uso' 
+        return res.status(400).json({
+          error: 'El nombre de usuario ya está en uso'
         });
       }
     }
@@ -216,12 +216,12 @@ export const updateProfile = async (req, res) => {
 
   } catch (error) {
     console.error('Error al actualizar perfil:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Error interno del servidor',
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
-}; 
+};
 
 // Cambiar contraseña
 export const changePassword = async (req, res) => {
@@ -231,39 +231,39 @@ export const changePassword = async (req, res) => {
 
     // Validar datos de entrada
     if (!currentPassword || !newPassword) {
-      return res.status(400).json({ 
-        error: 'Contraseña actual y nueva contraseña son requeridas' 
+      return res.status(400).json({
+        error: 'Contraseña actual y nueva contraseña son requeridas'
       });
     }
 
     // Validar longitud de la nueva contraseña
     if (newPassword.length < 6) {
-      return res.status(400).json({ 
-        error: 'La nueva contraseña debe tener al menos 6 caracteres' 
+      return res.status(400).json({
+        error: 'La nueva contraseña debe tener al menos 6 caracteres'
       });
     }
 
     // Buscar usuario
     const user = await User.findByPk(userId);
     if (!user) {
-      return res.status(404).json({ 
-        error: 'Usuario no encontrado' 
+      return res.status(404).json({
+        error: 'Usuario no encontrado'
       });
     }
 
     // Verificar contraseña actual
     const isValidCurrentPassword = await user.comparePassword(currentPassword);
     if (!isValidCurrentPassword) {
-      return res.status(401).json({ 
-        error: 'La contraseña actual es incorrecta' 
+      return res.status(401).json({
+        error: 'La contraseña actual es incorrecta'
       });
     }
 
     // Verificar que la nueva contraseña sea diferente
     const isSamePassword = await user.comparePassword(newPassword);
     if (isSamePassword) {
-      return res.status(400).json({ 
-        error: 'La nueva contraseña debe ser diferente a la actual' 
+      return res.status(400).json({
+        error: 'La nueva contraseña debe ser diferente a la actual'
       });
     }
 
@@ -277,12 +277,12 @@ export const changePassword = async (req, res) => {
 
   } catch (error) {
     console.error('Error al cambiar contraseña:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Error interno del servidor',
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
-}; 
+};
 
 // Solicitar recuperación de contraseña
 export const forgotPassword = async (req, res) => {
@@ -290,8 +290,8 @@ export const forgotPassword = async (req, res) => {
     const { email } = req.body;
 
     if (!email) {
-      return res.status(400).json({ 
-        error: 'Email es requerido' 
+      return res.status(400).json({
+        error: 'Email es requerido'
       });
     }
 
@@ -324,7 +324,7 @@ export const forgotPassword = async (req, res) => {
 
   } catch (error) {
     console.error('Error en forgotPassword:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Error interno del servidor',
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
@@ -337,14 +337,14 @@ export const resetPassword = async (req, res) => {
     const { token, newPassword } = req.body;
 
     if (!token || !newPassword) {
-      return res.status(400).json({ 
-        error: 'Token y nueva contraseña son requeridos' 
+      return res.status(400).json({
+        error: 'Token y nueva contraseña son requeridos'
       });
     }
 
     if (newPassword.length < 6) {
-      return res.status(400).json({ 
-        error: 'La nueva contraseña debe tener al menos 6 caracteres' 
+      return res.status(400).json({
+        error: 'La nueva contraseña debe tener al menos 6 caracteres'
       });
     }
 
@@ -353,23 +353,23 @@ export const resetPassword = async (req, res) => {
     try {
       decoded = jwt.verify(token, process.env.JWT_SECRET);
     } catch (error) {
-      return res.status(400).json({ 
-        error: 'Token inválido o expirado' 
+      return res.status(400).json({
+        error: 'Token inválido o expirado'
       });
     }
 
     // Verificar que sea un token de recuperación de contraseña
     if (decoded.type !== 'password_reset') {
-      return res.status(400).json({ 
-        error: 'Token inválido' 
+      return res.status(400).json({
+        error: 'Token inválido'
       });
     }
 
     // Buscar usuario
     const user = await User.findByPk(decoded.userId);
     if (!user) {
-      return res.status(404).json({ 
-        error: 'Usuario no encontrado' 
+      return res.status(404).json({
+        error: 'Usuario no encontrado'
       });
     }
 
@@ -383,7 +383,7 @@ export const resetPassword = async (req, res) => {
 
   } catch (error) {
     console.error('Error en resetPassword:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Error interno del servidor',
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });

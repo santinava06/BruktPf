@@ -95,19 +95,19 @@ function ChangePassword() {
         message: 'Contraseña actualizada exitosamente',
         severity: 'success'
       });
-      
+
       // Limpiar formulario
       setFormData({
         currentPassword: '',
         newPassword: '',
         confirmPassword: ''
       });
-      
+
       // Redirigir después de un breve delay
       setTimeout(() => {
         navigate('/dashboard');
       }, 2000);
-      
+
     } catch (err) {
       setError(err.message || 'Error al cambiar la contraseña');
     } finally {
@@ -195,7 +195,7 @@ function ChangePassword() {
                     <IconButton
                       onClick={() => handleTogglePasswordVisibility('current')}
                       edge="end"
-                      sx={{color: 'white !important'}}
+                      sx={{ color: 'white !important' }}
                     >
                       {showPasswords.current ? <VisibilityOff /> : <Visibility />}
                     </IconButton>
@@ -224,7 +224,7 @@ function ChangePassword() {
                     <IconButton
                       onClick={() => handleTogglePasswordVisibility('new')}
                       edge="end"
-                      sx={{color: 'white !important'}}
+                      sx={{ color: 'white !important' }}
                     >
                       {showPasswords.new ? <VisibilityOff /> : <Visibility />}
                     </IconButton>
@@ -253,7 +253,7 @@ function ChangePassword() {
                     <IconButton
                       onClick={() => handleTogglePasswordVisibility('confirm')}
                       edge="end"
-                      sx={{color: 'white !important'}}
+                      sx={{ color: 'white !important' }}
                     >
                       {showPasswords.confirm ? <VisibilityOff /> : <Visibility />}
                     </IconButton>
@@ -290,12 +290,16 @@ function ChangePassword() {
               onClick={() => navigate('/dashboard')}
               sx={{
                 py: 1.5,
-                borderColor: '#133A1A',
+                borderColor: '#ffffffff',
                 color: 'white !important',
                 '&:hover': {
-                  borderColor: '#1a4d2a',
-                  bgcolor: 'rgba(19, 58, 26, 0.05)'
-                }
+                  borderColor: '#ffffffff',
+                  bgcolor: 'rgba(238, 231, 231, 0.05)',
+                  color: 'white !important',
+                },
+                '& .MuiButton-label': {
+                  color: 'white !important',
+                },
               }}
             >
               Cancelar

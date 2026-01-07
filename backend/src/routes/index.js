@@ -6,6 +6,12 @@ import groupExpenseRoutes from './groupExpenses.js';
 import invitationRoutes from './invitations.js';
 import debtPaymentRoutes from './debtPayments.js';
 import healthRoutes from './health.js';
+import categoryRoutes from './categories.js';
+
+
+import activityRoutes from './activity.js';
+import debtSimplificationRoutes from './debtSimplification.js';
+import settingsRoutes from './settings.js';
 
 const router = express.Router();
 
@@ -33,7 +39,7 @@ router.get('/dev-token', async (req, res) => {
   try {
     const jwt = (await import('jsonwebtoken')).default;
     const User = (await import('../models/user.js')).default;
-    
+
     // Buscar el primer usuario o crear uno de desarrollo
     let user = await User.findOne();
     if (!user) {
@@ -43,14 +49,14 @@ router.get('/dev-token', async (req, res) => {
         password: 'dev123'
       });
     }
-    
+
     // Generar token que no expira (o expira en 1 año)
     const token = jwt.sign(
       { userId: user.id, email: user.email },
       process.env.JWT_SECRET || 'tu_super_secreto_jwt_aqui_cambialo_en_produccion',
       { expiresIn: '365d' } // 1 año
     );
-    
+
     res.json({
       message: 'Token de desarrollo generado',
       token,
@@ -84,6 +90,18 @@ router.use('/invitations', invitationRoutes);
 
 // Rutas de pagos de deudas
 router.use('/debt-payments', debtPaymentRoutes);
+
+// Rutas de categorías
+router.use('/categories', categoryRoutes);
+
+// Rutas de actividad
+router.use('/activity', activityRoutes);
+
+// Rutas de simplificación de deudas
+router.use('/debts', debtSimplificationRoutes);
+
+// Rutas de configuración
+router.use('/settings', settingsRoutes);
 
 // Rutas de health check
 router.use('/', healthRoutes);

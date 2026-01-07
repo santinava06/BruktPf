@@ -2,18 +2,19 @@ import GroupExpense from '../models/GroupExpense.js';
 import ExpenseGroup from '../models/ExpenseGroup.js';
 import GroupMember from '../models/GroupMember.js';
 import User from '../models/user.js';
+import { logActivity } from '../services/activityLogger.js';
 
 // Obtener gastos de un grupo
 export const getGroupExpenses = async (req, res) => {
   try {
     console.log('🔍 Debug - Controlador iniciado');
-    
+
     const userId = req.user.userId;
     const groupId = req.params.groupId;
 
-    console.log('🔍 Debug - Controlador recibió:', { 
-      userId, 
-      groupId, 
+    console.log('🔍 Debug - Controlador recibió:', {
+      userId,
+      groupId,
       type: typeof groupId,
       parsed: parseInt(groupId),
       isNaN: isNaN(parseInt(groupId)),
@@ -23,7 +24,7 @@ export const getGroupExpenses = async (req, res) => {
 
     // Validar que groupId sea un número válido
     if (!groupId || isNaN(parseInt(groupId))) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: 'ID de grupo inválido',
         debug: {
           groupId,
@@ -39,17 +40,17 @@ export const getGroupExpenses = async (req, res) => {
 
     // Verificar que el usuario sea miembro del grupo
     const membership = await GroupMember.findOne({
-      where: { 
+      where: {
         group_id: groupIdInt,
-        user_id: userId 
+        user_id: userId
       }
     });
 
     console.log('🔍 Debug - Membresía encontrada:', membership);
 
     if (!membership) {
-      return res.status(403).json({ 
-        error: 'No tienes acceso a este grupo' 
+      return res.status(403).json({
+        error: 'No tienes acceso a este grupo'
       });
     }
 
@@ -91,7 +92,7 @@ export const getGroupExpenses = async (req, res) => {
 
   } catch (error) {
     console.error('Error al obtener gastos del grupo:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Error interno del servidor',
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
@@ -107,29 +108,29 @@ export const createGroupExpense = async (req, res) => {
 
     // Validar datos de entrada
     if (!monto || !categoria || !fecha) {
-      return res.status(400).json({ 
-        error: 'Monto, categoría y fecha son requeridos' 
+      return res.status(400).json({
+        error: 'Monto, categoría y fecha son requeridos'
       });
     }
 
     // Validar que el monto sea positivo
     if (monto <= 0) {
-      return res.status(400).json({ 
-        error: 'El monto debe ser mayor a 0' 
+      return res.status(400).json({
+        error: 'El monto debe ser mayor a 0'
       });
     }
 
     // Verificar que el usuario sea miembro del grupo
     const membership = await GroupMember.findOne({
-      where: { 
+      where: {
         group_id: groupId,
-        user_id: userId 
+        user_id: userId
       }
     });
 
     if (!membership) {
-      return res.status(403).json({ 
-        error: 'No tienes acceso a este grupo' 
+      return res.status(403).json({
+        error: 'No tienes acceso a este grupo'
       });
     }
 
@@ -174,9 +175,23 @@ export const createGroupExpense = async (req, res) => {
       updated_at: expenseWithDetails.updated_at
     });
 
+    // Registrar actividad
+    await logActivity({
+      userId,
+      groupId,
+      actionType: 'CREATE_EXPENSE',
+      entityType: 'EXPENSE',
+      entityId: expense.id,
+      details: {
+        amount: expense.monto,
+        description: expense.descripcion,
+        category: expense.categoria
+      }
+    });
+
   } catch (error) {
     console.error('Error al crear gasto del grupo:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Error interno del servidor',
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
@@ -192,23 +207,23 @@ export const getGroupExpense = async (req, res) => {
 
     // Verificar que el usuario sea miembro del grupo
     const membership = await GroupMember.findOne({
-      where: { 
+      where: {
         group_id: groupId,
-        user_id: userId 
+        user_id: userId
       }
     });
 
     if (!membership) {
-      return res.status(403).json({ 
-        error: 'No tienes acceso a este grupo' 
+      return res.status(403).json({
+        error: 'No tienes acceso a este grupo'
       });
     }
 
     // Obtener el gasto
     const expense = await GroupExpense.findOne({
-      where: { 
+      where: {
         id: expenseId,
-        group_id: groupId 
+        group_id: groupId
       },
       include: [
         {
@@ -225,8 +240,8 @@ export const getGroupExpense = async (req, res) => {
     });
 
     if (!expense) {
-      return res.status(404).json({ 
-        error: 'Gasto no encontrado' 
+      return res.status(404).json({
+        error: 'Gasto no encontrado'
       });
     }
 
@@ -248,7 +263,7 @@ export const getGroupExpense = async (req, res) => {
 
   } catch (error) {
     console.error('Error al obtener gasto del grupo:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Error interno del servidor',
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
@@ -265,43 +280,43 @@ export const updateGroupExpense = async (req, res) => {
 
     // Verificar que el usuario sea miembro del grupo
     const membership = await GroupMember.findOne({
-      where: { 
+      where: {
         group_id: groupId,
-        user_id: userId 
+        user_id: userId
       }
     });
 
     if (!membership) {
-      return res.status(403).json({ 
-        error: 'No tienes acceso a este grupo' 
+      return res.status(403).json({
+        error: 'No tienes acceso a este grupo'
       });
     }
 
     // Buscar el gasto
     const expense = await GroupExpense.findOne({
-      where: { 
+      where: {
         id: expenseId,
-        group_id: groupId 
+        group_id: groupId
       }
     });
 
     if (!expense) {
-      return res.status(404).json({ 
-        error: 'Gasto no encontrado' 
+      return res.status(404).json({
+        error: 'Gasto no encontrado'
       });
     }
 
     // Verificar que el usuario sea quien pagó el gasto
     if (expense.paid_by !== userId) {
-      return res.status(403).json({ 
-        error: 'Solo quien pagó puede editar el gasto' 
+      return res.status(403).json({
+        error: 'Solo quien pagó puede editar el gasto'
       });
     }
 
     // Validar datos de entrada
     if (monto !== undefined && monto <= 0) {
-      return res.status(400).json({ 
-        error: 'El monto debe ser mayor a 0' 
+      return res.status(400).json({
+        error: 'El monto debe ser mayor a 0'
       });
     }
 
@@ -348,9 +363,23 @@ export const updateGroupExpense = async (req, res) => {
       }
     });
 
+    // Registrar actividad
+    await logActivity({
+      userId,
+      groupId,
+      actionType: 'UPDATE_EXPENSE',
+      entityType: 'EXPENSE',
+      entityId: expense.id,
+      details: {
+        amount: updatedExpense.monto,
+        description: updatedExpense.descripcion,
+        category: updatedExpense.categoria
+      }
+    });
+
   } catch (error) {
     console.error('Error al actualizar gasto del grupo:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Error interno del servidor',
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
@@ -372,16 +401,16 @@ export const deleteGroupExpense = async (req, res) => {
 
     // Verificar que el usuario sea miembro del grupo
     const membership = await GroupMember.findOne({
-      where: { 
+      where: {
         group_id: groupId,
-        user_id: userId 
+        user_id: userId
       }
     });
 
     if (!membership) {
       console.log('❌ Usuario no es miembro del grupo');
-      return res.status(403).json({ 
-        error: 'No tienes acceso a este grupo' 
+      return res.status(403).json({
+        error: 'No tienes acceso a este grupo'
       });
     }
 
@@ -389,16 +418,16 @@ export const deleteGroupExpense = async (req, res) => {
 
     // Buscar el gasto
     const expense = await GroupExpense.findOne({
-      where: { 
+      where: {
         id: expenseId,
-        group_id: groupId 
+        group_id: groupId
       }
     });
 
     if (!expense) {
       console.log('❌ Gasto no encontrado');
-      return res.status(404).json({ 
-        error: 'Gasto no encontrado' 
+      return res.status(404).json({
+        error: 'Gasto no encontrado'
       });
     }
 
@@ -429,9 +458,22 @@ export const deleteGroupExpense = async (req, res) => {
       message: 'Gasto del grupo eliminado exitosamente'
     });
 
+    // Registrar actividad
+    await logActivity({
+      userId,
+      groupId,
+      actionType: 'DELETE_EXPENSE',
+      entityType: 'EXPENSE',
+      entityId: expenseId,
+      details: {
+        amount: expense.monto,
+        description: expense.descripcion
+      }
+    });
+
   } catch (error) {
     console.error('❌ Error al eliminar gasto del grupo:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Error interno del servidor',
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
@@ -447,15 +489,15 @@ export const getGroupExpenseStats = async (req, res) => {
 
     // Verificar que el usuario sea miembro del grupo
     const membership = await GroupMember.findOne({
-      where: { 
+      where: {
         group_id: groupId,
-        user_id: userId 
+        user_id: userId
       }
     });
 
     if (!membership) {
-      return res.status(403).json({ 
-        error: 'No tienes acceso a este grupo' 
+      return res.status(403).json({
+        error: 'No tienes acceso a este grupo'
       });
     }
 
@@ -520,7 +562,7 @@ export const getGroupExpenseStats = async (req, res) => {
 
   } catch (error) {
     console.error('Error al obtener estadísticas del grupo:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Error interno del servidor',
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });

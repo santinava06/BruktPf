@@ -37,11 +37,18 @@ import {
   DialogContent,
   DialogActions,
   InputAdornment,
-  FormHelperText
+  FormHelperText,
+  Pagination,
+  TablePagination
 } from '@mui/material';
 import { getGroupDetails, getGroupExpenses, deleteGroupExpense, addGroupExpense, inviteToGroup } from '../services/groups';
 import { createDebtPayment, getGroupDebtPayments, deleteDebtPayment } from '../services/debtPayments';
 import DeleteConfirmationDialog from '../components/DeleteConfirmationDialog';
+import ExpenseCharts from '../components/ExpenseCharts';
+import ActivityList from '../components/ActivityList';
+import { exportExpensesToCSV, exportDebtAnalysisToCSV } from '../utils/exportUtils';
+import { EmptyExpenses, EmptyAnalysis } from '../components/EmptyState';
+import { ExpenseTableSkeleton, StatsCardSkeleton } from '../components/SkeletonLoader';
 import {
   ArrowBack as ArrowBackIcon,
   Add as AddIcon,
@@ -58,14 +65,23 @@ import {
   SwapHoriz as SwapHorizIcon,
   Email as EmailIcon,
   CalendarToday as CalendarTodayIcon,
-  Delete as DeleteIcon
+  Delete as DeleteIcon,
+  Assessment as AssessmentIcon,
+  Download as DownloadIcon,
+  FileDownload as FileDownloadIcon,
+  Settings as SettingsIcon,
+  History as HistoryIcon
 } from '@mui/icons-material';
+import CategoryManager from '../components/CategoryManager';
+import { useCategories } from '../context/CategoryContext';
+import { simplifyDebts } from '../services/debts';
+import { FormControlLabel, Switch } from '@mui/material';
 
 function GroupDetails() {
   const { groupId } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  
+
   console.log('🔍 GroupDetails iniciado:', {
     groupId,
     userId: user?.id,
@@ -83,6 +99,12 @@ function GroupDetails() {
   const [inviteDialog, setInviteDialog] = useState({ open: false });
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteError, setInviteError] = useState('');
+
+  // Estados para simplificación de deudas
+  const [isSimplified, setIsSimplified] = useState(false);
+  const [simplifiedDebts, setSimplifiedDebts] = useState([]);
+  const [loadingSimplification, setLoadingSimplification] = useState(false);
+
   const [addExpenseDialog, setAddExpenseDialog] = useState({ open: false });
   const [newExpense, setNewExpense] = useState({
     monto: '',
@@ -91,7 +113,13 @@ function GroupDetails() {
     fecha: new Date().toISOString().split('T')[0]
   });
   const [expenseError, setExpenseError] = useState('');
-  
+  const [expenseFieldErrors, setExpenseFieldErrors] = useState({
+    monto: '',
+    categoria: '',
+    descripcion: '',
+    fecha: ''
+  });
+
   // Estado para pagos de deudas
   const [debtPaymentDialog, setDebtPaymentDialog] = useState({ open: false, debt: null });
   const [newPayment, setNewPayment] = useState({
@@ -102,42 +130,67 @@ function GroupDetails() {
     notes: ''
   });
   const [paymentError, setPaymentError] = useState('');
-  
+  const [paymentFieldErrors, setPaymentFieldErrors] = useState({
+    receiver_id: '',
+    amount: '',
+    description: ''
+  });
+  const [confirmPaymentDialog, setConfirmPaymentDialog] = useState({ open: false, paymentData: null });
+
   // Filtros
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
-  
+
+  // Paginación
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+
+  // Categorías
+  const { categories: contextCategories, fetchCategories } = useCategories();
+  const [categoryManagerOpen, setCategoryManagerOpen] = useState(false);
+
+  // Combinar categorías por defecto con las del contexto si es necesario
+  // Las categorías del contexto ya incluyen globales y personales
+  const availableCategories = useMemo(() => {
+    return contextCategories;
+  }, [contextCategories]);
+
+  useEffect(() => {
+    fetchCategories();
+  }, [fetchCategories]);
+
+
   // Memoizar loadGroupData para evitar re-creaciones
   const loadGroupData = useCallback(async () => {
     try {
       setLoading(true);
       console.log('🔄 Cargando datos del grupo:', groupId);
-      
+
       const [groupData, expensesData, debtPaymentsData] = await Promise.all([
         getGroupDetails(groupId),
         getGroupExpenses(groupId),
         getGroupDebtPayments(groupId)
       ]);
-      
+
       console.log('📊 Datos recibidos:', {
         groupData,
         expensesData,
         debtPaymentsData
       });
-      
+
       // El backend devuelve { group: {...} }, necesitamos extraer el grupo
       const group = groupData.group || groupData;
-      
+
       // Combinar los datos del grupo con gastos y pagos
       const groupWithData = {
         ...group,
         expenses: Array.isArray(expensesData) ? expensesData : [],
         debtPayments: Array.isArray(debtPaymentsData) ? debtPaymentsData : []
       };
-      
+
       setGroup(groupWithData);
       setExpenses(Array.isArray(expensesData) ? expensesData : []);
-      
+
       console.log('✅ Datos cargados:', {
         groupData,
         group: groupWithData,
@@ -163,7 +216,7 @@ function GroupDetails() {
   const combinedMovements = useMemo(() => {
     const expenses = group?.expenses || [];
     const debtPayments = group?.debtPayments || [];
-    
+
     const expenseMovements = expenses.map(expense => ({
       id: expense.id,
       type: 'expense',
@@ -174,7 +227,7 @@ function GroupDetails() {
       paidBy: expense.paid_by_name || expense.paid_by_email?.split('@')[0] || 'Usuario',
       paidByEmail: expense.paid_by_email
     }));
-    
+
     const paymentMovements = debtPayments.map(payment => ({
       id: payment.id,
       type: 'payment',
@@ -187,8 +240,8 @@ function GroupDetails() {
       receiver: payment.receiver?.nombre || payment.receiver?.email?.split('@')[0] || 'Usuario',
       receiverEmail: payment.receiver?.email
     }));
-    
-    return [...expenseMovements, ...paymentMovements].sort((a, b) => 
+
+    return [...expenseMovements, ...paymentMovements].sort((a, b) =>
       new Date(b.date) - new Date(a.date)
     );
   }, [group?.expenses, group?.debtPayments]);
@@ -196,23 +249,44 @@ function GroupDetails() {
   // Memoizar filteredMovements
   const filteredMovements = useMemo(() => {
     let filtered = combinedMovements;
-    
+
     // Filtrar por término de búsqueda
     if (searchTerm) {
-      filtered = filtered.filter(movement => 
+      filtered = filtered.filter(movement =>
         movement.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
         movement.paidBy.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (movement.receiver && movement.receiver.toLowerCase().includes(searchTerm.toLowerCase()))
       );
     }
-    
+
     // Filtrar por categoría
     if (categoryFilter !== 'all') {
       filtered = filtered.filter(movement => movement.category === categoryFilter);
     }
-    
+
     return filtered;
   }, [combinedMovements, searchTerm, categoryFilter]);
+
+  // Paginación de movimientos
+  const paginatedMovements = useMemo(() => {
+    const startIndex = page * rowsPerPage;
+    const endIndex = startIndex + rowsPerPage;
+    return filteredMovements.slice(startIndex, endIndex);
+  }, [filteredMovements, page, rowsPerPage]);
+
+  const handleChangePage = (event, newPage) => {
+    setPage(newPage);
+  };
+
+  const handleChangeRowsPerPage = (event) => {
+    setRowsPerPage(parseInt(event.target.value, 10));
+    setPage(0);
+  };
+
+  // Resetear página cuando cambian los filtros
+  React.useEffect(() => {
+    setPage(0);
+  }, [searchTerm, categoryFilter]);
 
   // Memoizar stats
   const stats = useMemo(() => {
@@ -221,10 +295,10 @@ function GroupDetails() {
     const memberCount = group?.members?.length || 1;
     const averagePerPerson = memberCount > 0 ? totalExpenses / memberCount : 0;
     const equitableDistribution = averagePerPerson; // Distribución equitativa es el promedio por persona
-    
+
     // Calcular total de pagos de deudas (para información adicional)
     const totalPayments = (group?.debtPayments || []).reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
-    
+
     return {
       totalExpenses,
       memberCount,
@@ -258,7 +332,7 @@ function GroupDetails() {
       email: m.user?.email,
       name: m.user?.nombre
     })));
-    
+
     group.members.forEach(member => {
       const email = member.user?.email;
       if (email) {
@@ -280,7 +354,7 @@ function GroupDetails() {
       amount: e.monto,
       desc: e.descripcion
     })));
-    
+
     expenses.forEach(expense => {
       const payerEmail = expense.paid_by_email;
       if (memberExpenses[payerEmail]) {
@@ -295,7 +369,7 @@ function GroupDetails() {
           fecha: expense.fecha,
           paid_by_name: expense.paid_by_name || expense.paid_by_email?.split('@')[0] || 'Usuario'
         });
-        
+
         console.log(`💰 Gasto registrado para ${payerEmail}: $${oldTotal} + $${expense.monto} = $${memberExpenses[payerEmail].totalSpent} - ${expense.descripcion}`);
       } else {
         console.warn(`⚠️ No se encontró balance para pagador: ${payerEmail}`);
@@ -317,10 +391,10 @@ function GroupDetails() {
     const memberBalances = Object.values(memberExpenses).map(member => {
       // Calcular promedio por gasto para este miembro
       const averagePerExpense = member.expenseCount > 0 ? member.totalSpent / member.expenseCount : 0;
-      
+
       const balance = member.totalSpent - averagePerPerson;
       console.log(`💰 Balance inicial para ${member.name}: $${member.totalSpent} - $${averagePerPerson} = $${balance} (promedio por gasto: $${averagePerExpense})`);
-      
+
       return {
         ...member,
         averagePerExpense,
@@ -333,10 +407,10 @@ function GroupDetails() {
     const allMemberEmails = group.members.map(m => m.user?.email).filter(Boolean);
     const balanceEmails = memberBalances.map(m => m.email);
     const missingMembers = allMemberEmails.filter(email => !balanceEmails.includes(email));
-    
+
     if (missingMembers.length > 0) {
       console.warn('⚠️ Miembros sin balance calculado:', missingMembers);
-      
+
       // Agregar balances para miembros faltantes
       missingMembers.forEach(email => {
         const member = group.members.find(m => m.user?.email === email);
@@ -365,7 +439,7 @@ function GroupDetails() {
       balance: m.balance,
       isPositive: m.isPositive
     })));
-    
+
     // Calcular deuda total inicial
     const initialTotalDebt = memberBalances
       .filter(m => m.balance < 0)
@@ -375,7 +449,7 @@ function GroupDetails() {
     // Aplicar pagos de deudas a los balances
     const debtPayments = group?.debtPayments || [];
     console.log('🔄 Aplicando pagos de deudas:', debtPayments.length, 'pagos');
-    
+
     // Verificar si hay pagos duplicados
     const paymentIds = debtPayments.map(p => p.id);
     const uniquePaymentIds = [...new Set(paymentIds)];
@@ -386,11 +460,11 @@ function GroupDetails() {
         duplicates: paymentIds.filter((id, index) => paymentIds.indexOf(id) !== index)
       });
     }
-    
+
     debtPayments.forEach((payment, index) => {
       const payerEmail = payment.payer?.email;
       const receiverEmail = payment.receiver?.email;
-      
+
       console.log(`💸 Aplicando pago ${index + 1}:`, {
         payer: payerEmail,
         receiver: receiverEmail,
@@ -398,24 +472,24 @@ function GroupDetails() {
         paymentId: payment.id,
         description: payment.description
       });
-      
+
       // Encontrar los balances correspondientes
       const payerBalance = memberBalances.find(m => m.email === payerEmail);
       const receiverBalance = memberBalances.find(m => m.email === receiverEmail);
-      
-              if (payerBalance) {
-          const oldBalance = payerBalance.balance;
-          payerBalance.balance += Number(payment.amount || 0); // El pagador reduce su deuda (balance más positivo)
-          payerBalance.isPositive = payerBalance.balance > 0;
-          console.log(`  📉 Payer balance (${payerEmail}): ${oldBalance} → ${payerBalance.balance} (deuda reducida, isPositive: ${payerBalance.isPositive})`);
-        }
-        
-        if (receiverBalance) {
-          const oldBalance = receiverBalance.balance;
-          receiverBalance.balance -= Number(payment.amount || 0); // El receptor reduce su crédito (balance menos positivo)
-          receiverBalance.isPositive = receiverBalance.balance > 0;
-          console.log(`  📈 Receiver balance (${receiverEmail}): ${oldBalance} → ${receiverBalance.balance} (crédito reducido, isPositive: ${receiverBalance.isPositive})`);
-        }
+
+      if (payerBalance) {
+        const oldBalance = payerBalance.balance;
+        payerBalance.balance += Number(payment.amount || 0); // El pagador reduce su deuda (balance más positivo)
+        payerBalance.isPositive = payerBalance.balance > 0;
+        console.log(`  📉 Payer balance (${payerEmail}): ${oldBalance} → ${payerBalance.balance} (deuda reducida, isPositive: ${payerBalance.isPositive})`);
+      }
+
+      if (receiverBalance) {
+        const oldBalance = receiverBalance.balance;
+        receiverBalance.balance -= Number(payment.amount || 0); // El receptor reduce su crédito (balance menos positivo)
+        receiverBalance.isPositive = receiverBalance.balance > 0;
+        console.log(`  📈 Receiver balance (${receiverEmail}): ${oldBalance} → ${receiverBalance.balance} (crédito reducido, isPositive: ${receiverBalance.isPositive})`);
+      }
     });
 
     console.log('💰 Balances después de pagos:', memberBalances.map(m => ({
@@ -441,14 +515,14 @@ function GroupDetails() {
       balance: m.balance,
       isPositive: m.isPositive
     })));
-    
+
     // Calcular deuda total final
     const finalTotalDebt = memberBalances
       .filter(m => m.balance < 0)
       .reduce((sum, m) => sum + Math.abs(m.balance), 0);
     console.log('💵 Deuda total final:', finalTotalDebt);
     console.log('📊 Cambio en deuda total:', finalTotalDebt - initialTotalDebt);
-    
+
     // Verificar que la suma de todos los balances sea 0 (debe ser 0 si los cálculos son correctos)
     const totalBalance = memberBalances.reduce((sum, m) => sum + m.balance, 0);
     console.log('🔍 Verificación de balance total:', {
@@ -460,38 +534,38 @@ function GroupDetails() {
     // Calcular deudas pendientes basadas en balances finales
     const positiveBalances = memberBalances.filter(m => m.balance > 0);
     const negativeBalances = memberBalances.filter(m => m.balance < 0);
-    
+
     console.log('📈 Balances positivos:', positiveBalances.map(m => ({ name: m.name, email: m.email, balance: m.balance })));
     console.log('📉 Balances negativos:', negativeBalances.map(m => ({ name: m.name, email: m.email, balance: m.balance })));
-    
+
     const pendingDebts = [];
-    
+
     // Solo crear deudas pendientes si hay balances negativos y positivos
     if (negativeBalances.length > 0 && positiveBalances.length > 0) {
       // Crear copias de los balances para no modificar los originales
       const remainingPositive = [...positiveBalances];
       const remainingNegative = [...negativeBalances];
-      
+
       // Ordenar deudores por deuda más grande primero y acreedores por balance más grande primero
       remainingNegative.sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance));
       remainingPositive.sort((a, b) => b.balance - a.balance);
-      
+
       console.log('🔄 Procesando deudas pendientes con balances ordenados:');
       console.log('  Deudores:', remainingNegative.map(d => ({ name: d.name, debt: Math.abs(d.balance) })));
       console.log('  Acreedores:', remainingPositive.map(c => ({ name: c.name, balance: c.balance })));
-      
+
       // Para cada persona con balance negativo
       remainingNegative.forEach(debtor => {
         let remainingDebt = Math.abs(debtor.balance);
         console.log(`\n💳 Procesando deudor: ${debtor.name} (deuda: $${remainingDebt})`);
-        
+
         // Buscar personas con balance positivo para pagar la deuda
         for (let i = 0; i < remainingPositive.length && remainingDebt > 0; i++) {
           const creditor = remainingPositive[i];
-          
+
           if (creditor.balance > 0) {
             const transferAmount = Math.min(remainingDebt, creditor.balance);
-            
+
             if (transferAmount > 0) {
               pendingDebts.push({
                 from: debtor.name || debtor.email,
@@ -501,14 +575,14 @@ function GroupDetails() {
                 amount: transferAmount,
                 status: 'Deuda pendiente por pagar'
               });
-              
+
               console.log(`  💸 Creando deuda: ${debtor.name} → ${creditor.name} = $${transferAmount}`);
               console.log(`    Acreedor balance antes: $${creditor.balance}`);
-              
+
               // Reducir la deuda restante y el balance del acreedor
               remainingDebt -= transferAmount;
               creditor.balance -= transferAmount;
-              
+
               console.log(`    Acreedor balance después: $${creditor.balance}`);
               console.log(`    Deuda restante: $${remainingDebt}`);
             }
@@ -516,7 +590,7 @@ function GroupDetails() {
         }
       });
     }
-    
+
     console.log('💳 Deudas pendientes calculadas:', pendingDebts.length);
     console.log('💰 Detalles de deudas pendientes:', pendingDebts.map(debt => ({
       from: debt.from,
@@ -526,7 +600,7 @@ function GroupDetails() {
 
     const totalDebts = pendingDebts.reduce((sum, debt) => sum + debt.amount, 0);
     console.log('💵 Total de deudas pendientes:', totalDebts);
-    
+
     // Verificar que el total de deudas pendientes coincida con la deuda total final
     console.log('🔍 Verificación de cálculos:', {
       deudaTotalFinal: finalTotalDebt,
@@ -534,16 +608,16 @@ function GroupDetails() {
       diferencia: Math.abs(finalTotalDebt - totalDebts),
       esCorrecto: Math.abs(finalTotalDebt - totalDebts) < 0.01
     });
-    
+
     // Si hay una diferencia significativa, recalcular las deudas pendientes
     if (Math.abs(finalTotalDebt - totalDebts) > 0.01) {
       console.warn('⚠️ DIFERENCIA DETECTADA - Recalculando deudas pendientes...');
-      
+
       // Recalcular deudas pendientes de manera más simple
       const recalculatedPendingDebts = [];
       const finalPositiveBalances = memberBalances.filter(m => m.balance > 0);
       const finalNegativeBalances = memberBalances.filter(m => m.balance < 0);
-      
+
       finalNegativeBalances.forEach(debtor => {
         const debtAmount = Math.abs(debtor.balance);
         if (debtAmount > 0) {
@@ -562,9 +636,9 @@ function GroupDetails() {
           }
         }
       });
-      
+
       console.log('🔄 Deudas pendientes recalculadas:', recalculatedPendingDebts);
-      
+
       // Usar las deudas recalculadas si son más precisas
       if (Math.abs(finalTotalDebt - recalculatedPendingDebts.reduce((sum, d) => sum + d.amount, 0)) < 0.01) {
         console.log('✅ Usando deudas pendientes recalculadas');
@@ -668,13 +742,13 @@ function GroupDetails() {
         // Calcular balance inicial
         const averagePerPerson = 812.5;
         let correctBalance = member.totalSpent - averagePerPerson;
-        
+
         // Aplicar pagos si es necesario
         if (member.email === 'sncarp2003@gmail.com') {
           // sncarp2003 recibió un pago de $225 de eze
           correctBalance -= 225;
         }
-        
+
         console.log(`🔧 Restaurando balance para ${member.name}:`, {
           totalSpent: member.totalSpent,
           averagePerPerson,
@@ -682,7 +756,7 @@ function GroupDetails() {
           balanceFinal: correctBalance,
           isPositive: correctBalance > 0
         });
-        
+
         member.balance = correctBalance;
         member.isPositive = correctBalance > 0;
       }
@@ -690,6 +764,42 @@ function GroupDetails() {
 
     return result;
   }, [group?.members, expenses, group?.debtPayments]);
+
+  const handleSimplifyDebts = async (event) => {
+    const checked = event.target.checked;
+    setIsSimplified(checked);
+
+    if (checked && simplifiedDebts.length === 0) {
+      try {
+        setLoadingSimplification(true);
+        // Preparar payload
+        const balancesPayload = debtAnalysis.memberBalances.map(m => ({
+          user: { id: m.user?.id, name: m.name, email: m.email },
+          balance: m.balance
+        }));
+
+        const result = await simplifyDebts(balancesPayload);
+
+        // Mapear resultado al formato del frontend
+        const mappedResult = result.map(d => ({
+          from: d.from.name || d.from.email || 'Usuario',
+          fromEmail: d.from.email,
+          to: d.to.name || d.to.email || 'Usuario',
+          toEmail: d.to.email,
+          amount: d.amount,
+          status: 'Deuda simplificada'
+        }));
+
+        setSimplifiedDebts(mappedResult);
+      } catch (err) {
+        console.error('Error simplifying debts:', err);
+        setError('Error al simplificar deudas');
+        setIsSimplified(false);
+      } finally {
+        setLoadingSimplification(false);
+      }
+    }
+  };
 
   // Memoizar handlers para evitar re-creaciones
   const handleDeleteExpense = useCallback(async (expenseId) => {
@@ -736,10 +846,12 @@ function GroupDetails() {
     }
   }, [groupId, user?.id, user?.email, loadGroupData]);
 
+  const debtsToShow = isSimplified ? simplifiedDebts : debtAnalysis.pendingDebts;
+
   const handleInviteMember = async () => {
     try {
       setInviteError('');
-      
+
       if (!inviteEmail.trim()) {
         setInviteError('El email es requerido');
         return;
@@ -760,14 +872,14 @@ function GroupDetails() {
       // Llamar a la API para invitar al miembro
       const result = await inviteToGroup(groupId, inviteEmail);
       console.log('✅ Miembro invitado:', result);
-      
+
       setInviteDialog({ open: false });
       setInviteEmail('');
       setSuccess('Invitación enviada exitosamente');
-      
+
       // Recargar datos del grupo para mostrar el nuevo miembro
       await loadGroupData();
-      
+
     } catch (err) {
       console.error('❌ Error inviting member:', err);
       setInviteError(err.message || 'Error al enviar invitación');
@@ -807,30 +919,26 @@ function GroupDetails() {
       fecha: new Date().toISOString().split('T')[0]
     });
     setExpenseError('');
+    setExpenseFieldErrors({
+      monto: '',
+      categoria: '',
+      descripcion: '',
+      fecha: ''
+    });
   };
 
   const handleAddExpense = async () => {
     try {
       setExpenseError('');
-      
-      // Validaciones
-      if (!newExpense.monto || newExpense.monto <= 0) {
-        setExpenseError('El monto es requerido y debe ser mayor a 0');
-        return;
-      }
 
-      if (!newExpense.categoria) {
-        setExpenseError('La categoría es requerida');
-        return;
-      }
+      // Validar todos los campos
+      const isMontoValid = validateExpenseField('monto', newExpense.monto);
+      const isCategoriaValid = validateExpenseField('categoria', newExpense.categoria);
+      const isDescripcionValid = validateExpenseField('descripcion', newExpense.descripcion);
+      const isFechaValid = validateExpenseField('fecha', newExpense.fecha);
 
-      if (!newExpense.descripcion.trim()) {
-        setExpenseError('La descripción es requerida');
-        return;
-      }
-
-      if (!newExpense.fecha) {
-        setExpenseError('La fecha es requerida');
+      if (!isMontoValid || !isCategoriaValid || !isDescripcionValid || !isFechaValid) {
+        setExpenseError('Por favor, corrige los errores en el formulario');
         return;
       }
 
@@ -850,16 +958,16 @@ function GroupDetails() {
       // Llamar a la API para agregar el gasto
       const result = await addGroupExpense(groupId, expenseData);
       console.log('✅ Gasto agregado:', result);
-      
+
       // Cerrar modal y mostrar éxito
       setAddExpenseDialog({ open: false });
       setSuccess('Gasto agregado exitosamente');
-      
+
       // Recargar gastos
       console.log('🔄 Recargando datos...');
       await loadGroupData();
       console.log('✅ Datos recargados');
-      
+
     } catch (err) {
       console.error('❌ Error adding expense:', err);
       setExpenseError(err.message || 'Error al agregar gasto');
@@ -877,38 +985,80 @@ function GroupDetails() {
       notes: ''
     });
     setPaymentError('');
+    setPaymentFieldErrors({
+      receiver_id: '',
+      amount: '',
+      description: ''
+    });
+  };
+
+  const validatePaymentField = (field, value) => {
+    let error = '';
+
+    switch (field) {
+      case 'receiver_id':
+        if (!value || value === '') {
+          error = 'Debes seleccionar a quién pagar';
+        }
+        break;
+      case 'amount':
+        if (!value || value.trim() === '') {
+          error = 'El monto es requerido';
+        } else {
+          const numValue = parseFloat(value);
+          if (isNaN(numValue) || numValue <= 0) {
+            error = 'El monto debe ser un número mayor a 0';
+          } else if (numValue > 1000000) {
+            error = 'El monto no puede exceder $1,000,000';
+          }
+        }
+        break;
+      case 'description':
+        if (!value || value.trim() === '') {
+          error = 'La descripción es requerida';
+        } else if (value.trim().length < 3) {
+          error = 'La descripción debe tener al menos 3 caracteres';
+        } else if (value.trim().length > 200) {
+          error = 'La descripción no puede exceder 200 caracteres';
+        }
+        break;
+      default:
+        break;
+    }
+
+    setPaymentFieldErrors(prev => ({ ...prev, [field]: error }));
+    return !error;
   };
 
   const handlePaymentChange = (field, value) => {
     setNewPayment(prev => ({ ...prev, [field]: value }));
+
+    // Validar en tiempo real
+    if (paymentFieldErrors[field]) {
+      validatePaymentField(field, value);
+    }
+
+    // Limpiar error general si existe
     if (paymentError) {
       setPaymentError('');
     }
   };
 
+  const handlePaymentBlur = (field) => {
+    validatePaymentField(field, newPayment[field]);
+  };
+
   const handleCreateDebtPayment = async () => {
     try {
       setPaymentError('');
-      
-      console.log('🔄 Iniciando registro de pago de deuda:', {
-        groupId,
-        newPayment,
-        groupMembers: group?.members?.length || 0
-      });
-      
-      // Validaciones
-      if (!newPayment.receiver_id) {
-        setPaymentError('Debes seleccionar a quién pagar');
-        return;
-      }
 
-      if (!newPayment.amount || newPayment.amount <= 0) {
-        setPaymentError('El monto es requerido y debe ser mayor a 0');
-        return;
-      }
+      // Validar todos los campos
+      const isReceiverValid = validatePaymentField('receiver_id', newPayment.receiver_id);
+      const isAmountValid = validatePaymentField('amount', newPayment.amount);
+      const isDescriptionValid = validatePaymentField('description', newPayment.description);
 
-      if (!newPayment.description.trim()) {
-        setPaymentError('La descripción es requerida');
+      if (!isReceiverValid || !isAmountValid || !isDescriptionValid) {
+        setPaymentError('Por favor, corrige los errores en el formulario');
         return;
       }
 
@@ -921,6 +1071,30 @@ function GroupDetails() {
         notes: newPayment.notes.trim()
       };
 
+      // Si el pago es mayor a $1000, pedir confirmación
+      if (paymentData.amount > 1000) {
+        const receiver = group?.members?.find(m => m.user?.id === paymentData.receiver_id);
+        setConfirmPaymentDialog({
+          open: true,
+          paymentData: {
+            ...paymentData,
+            receiverName: receiver?.user?.nombre || receiver?.user?.email || 'Usuario'
+          }
+        });
+        return;
+      }
+
+      // Si es menor a $1000, proceder directamente
+      await processPayment(paymentData);
+
+    } catch (err) {
+      console.error('❌ Error creating debt payment:', err);
+      setPaymentError(err.message || 'Error al registrar pago de deuda');
+    }
+  };
+
+  const processPayment = async (paymentData) => {
+    try {
       console.log('🔄 Registrando pago de deuda:', {
         groupId,
         paymentData
@@ -929,27 +1103,89 @@ function GroupDetails() {
       // Llamar a la API para crear el pago
       const result = await createDebtPayment(groupId, paymentData);
       console.log('✅ Pago registrado:', result);
-      
-      // Cerrar modal y mostrar éxito
+
+      // Cerrar modales y mostrar éxito
       setDebtPaymentDialog({ open: false, debt: null });
+      setConfirmPaymentDialog({ open: false, paymentData: null });
       setSuccess('Pago de deuda registrado exitosamente');
-      
+
       // Recargar datos completos del grupo
       console.log('🔄 Recargando datos del grupo...');
       await loadGroupData();
       console.log('✅ Datos recargados');
-      
     } catch (err) {
-      console.error('❌ Error creating debt payment:', err);
+      console.error('❌ Error processing payment:', err);
       setPaymentError(err.message || 'Error al registrar pago de deuda');
+      setConfirmPaymentDialog({ open: false, paymentData: null });
     }
+  };
+
+  const validateExpenseField = (field, value) => {
+    let error = '';
+
+    switch (field) {
+      case 'monto':
+        if (!value || value.trim() === '') {
+          error = 'El monto es requerido';
+        } else {
+          const numValue = parseFloat(value);
+          if (isNaN(numValue) || numValue <= 0) {
+            error = 'El monto debe ser un número mayor a 0';
+          } else if (numValue > 1000000) {
+            error = 'El monto no puede exceder $1,000,000';
+          }
+        }
+        break;
+      case 'categoria':
+        if (!value || value.trim() === '') {
+          error = 'La categoría es requerida';
+        }
+        break;
+      case 'descripcion':
+        if (!value || value.trim() === '') {
+          error = 'La descripción es requerida';
+        } else if (value.trim().length < 3) {
+          error = 'La descripción debe tener al menos 3 caracteres';
+        } else if (value.trim().length > 200) {
+          error = 'La descripción no puede exceder 200 caracteres';
+        }
+        break;
+      case 'fecha':
+        if (!value) {
+          error = 'La fecha es requerida';
+        } else {
+          const selectedDate = new Date(value);
+          const today = new Date();
+          today.setHours(23, 59, 59, 999);
+          if (selectedDate > today) {
+            error = 'La fecha no puede ser futura';
+          }
+        }
+        break;
+      default:
+        break;
+    }
+
+    setExpenseFieldErrors(prev => ({ ...prev, [field]: error }));
+    return !error;
   };
 
   const handleExpenseChange = (field, value) => {
     setNewExpense(prev => ({ ...prev, [field]: value }));
+
+    // Validar en tiempo real
+    if (expenseFieldErrors[field]) {
+      validateExpenseField(field, value);
+    }
+
+    // Limpiar error general si existe
     if (expenseError) {
       setExpenseError('');
     }
+  };
+
+  const handleExpenseBlur = (field) => {
+    validateExpenseField(field, newExpense[field]);
   };
 
   if (loading) {
@@ -984,7 +1220,7 @@ function GroupDetails() {
       {/* Header con botones */}
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={4}>
         <Box display="flex" alignItems="center" gap={2}>
-          <IconButton 
+          <IconButton
             onClick={() => navigate('/groups')}
             sx={{
               bgcolor: 'rgba(19, 58, 26, 0.1)',
@@ -995,7 +1231,7 @@ function GroupDetails() {
           >
             <ArrowBackIcon sx={{ color: 'white !important' }} />
           </IconButton>
-          <Typography variant="h3" sx={{ 
+          <Typography variant="h3" sx={{
             fontWeight: 800,
             color: '#133A1A',
             background: 'linear-gradient(135deg, #133A1A 0%, #1a4d2a 100%)',
@@ -1007,79 +1243,84 @@ function GroupDetails() {
           </Typography>
         </Box>
         <Box display="flex" gap={2}>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={handleOpenAddExpenseDialog}
-            sx={{ 
-              borderRadius: 3,
-              textTransform: 'none',
-              fontWeight: 600,
-              px: 3,
-              py: 1.5,
-              bgcolor: '#133A1A',
-              color: 'white !important',
-              boxShadow: '0 4px 12px rgba(19, 58, 26, 0.3)',
-              '&:hover': {
-                bgcolor: '#1a4d2a',
-                color: 'white !important',
-                transform: 'translateY(-2px)',
-                boxShadow: '0 6px 20px rgba(19, 58, 26, 0.4)'
-              },
-              '& .MuiButton-label': {
-                color: 'white !important'
-              },
-              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
-            }}
-          >
-            Agregar Gasto
-          </Button>
+
           {group?.creator_id === user?.id && (
             <Button
               variant="outlined"
               startIcon={<PersonAddIcon />}
               onClick={handleOpenInviteDialog}
-              sx={{ 
+              sx={{
                 borderRadius: 3,
-              textTransform: 'none',
-              fontWeight: 600,
-              px: 3,
-              py: 1.5,
-              bgcolor: '#133A1A',
-              color: 'white !important',
-              boxShadow: '0 4px 12px rgba(19, 58, 26, 0.3)',
-              '&:hover': {
-                bgcolor: '#1a4d2a',
+                textTransform: 'none',
+                fontWeight: 600,
+                px: 3,
+                py: 1.5,
+                bgcolor: '#133A1A',
                 color: 'white !important',
-                transform: 'translateY(-2px)',
-                boxShadow: '0 6px 20px rgba(19, 58, 26, 0.4)'
-              },
-              '& .MuiButton-label': {
-                color: 'white !important'
-              },
-              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+                boxShadow: '0 4px 12px rgba(19, 58, 26, 0.3)',
+                '&:hover': {
+                  bgcolor: '#1a4d2a',
+                  color: 'white !important',
+                  transform: 'translateY(-2px)',
+                  boxShadow: '0 6px 20px rgba(19, 58, 26, 0.4)'
+                },
+                '& .MuiButton-label': {
+                  color: 'white !important'
+                },
+                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
               }}
             >
               Invitar Miembro
             </Button>
           )}
+          <Button
+            variant="outlined"
+            startIcon={<DownloadIcon />}
+            onClick={() => {
+              try {
+                exportExpensesToCSV(expenses, group);
+                setSuccess('Gastos exportados a CSV exitosamente');
+              } catch (err) {
+                setError('Error al exportar gastos: ' + err.message);
+              }
+            }}
+            disabled={!expenses || expenses.length === 0}
+            sx={{
+              borderRadius: 3,
+              textTransform: 'none',
+              fontWeight: 600,
+              px: 3,
+              py: 1.5,
+              borderColor: 'primary.main',
+              color: 'white !important',
+              '&:hover': {
+                borderColor: 'primary.dark',
+                bgcolor: 'action.hover',
+                transform: 'translateY(-2px)'
+              },
+              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+            }}
+            aria-label="Exportar gastos a CSV"
+          >
+            Exportar CSV
+          </Button>
         </Box>
       </Box>
 
       {/* Pestañas mejoradas */}
-      <Paper 
+      <Paper
         elevation={0}
-        sx={{ 
+        sx={{
           mb: 4,
           borderRadius: 3,
           border: '1px solid rgba(19, 58, 26, 0.1)',
           overflow: 'hidden'
         }}
       >
-        <Tabs 
-          value={activeTab} 
+        <Tabs
+          value={activeTab}
           onChange={(e, newValue) => setActiveTab(newValue)}
-          sx={{ 
+          sx={{
             bgcolor: '#133A1A',
             '& .MuiTabs-indicator': {
               bgcolor: 'white',
@@ -1087,9 +1328,9 @@ function GroupDetails() {
             }
           }}
         >
-          <Tab 
-            icon={<AttachMoneyIcon />} 
-            label="Gastos" 
+          <Tab
+            icon={<AttachMoneyIcon />}
+            label="Gastos"
             iconPosition="start"
             sx={{
               color: 'white',
@@ -1102,9 +1343,9 @@ function GroupDetails() {
               }
             }}
           />
-          <Tab 
-            icon={<BusinessIcon />} 
-            label="Análisis de Deudas" 
+          <Tab
+            icon={<BusinessIcon />}
+            label="Análisis de Deudas"
             iconPosition="start"
             sx={{
               color: 'white',
@@ -1117,9 +1358,39 @@ function GroupDetails() {
               }
             }}
           />
-          <Tab 
-            icon={<PeopleIcon />} 
-            label="Miembros" 
+          <Tab
+            icon={<AssessmentIcon />}
+            label="Análisis"
+            iconPosition="start"
+            sx={{
+              color: 'white',
+              fontWeight: 600,
+              '&.Mui-selected': {
+                color: 'white'
+              },
+              '& .MuiTab-iconWrapper': {
+                color: 'inherit'
+              }
+            }}
+          />
+          <Tab
+            icon={<PeopleIcon />}
+            label="Miembros"
+            iconPosition="start"
+            sx={{
+              color: 'white',
+              fontWeight: 600,
+              '&.Mui-selected': {
+                color: 'white'
+              },
+              '& .MuiTab-iconWrapper': {
+                color: 'inherit'
+              }
+            }}
+          />
+          <Tab
+            icon={<HistoryIcon />}
+            label="Actividad"
             iconPosition="start"
             sx={{
               color: 'white',
@@ -1140,187 +1411,187 @@ function GroupDetails() {
         <>
           {/* Tarjetas de resumen mejoradas */}
           {stats && (
-            <Grid container spacing={3} sx={{ mb: 4 }}>
+            <Grid container spacing={{ xs: 2, sm: 3, md: 3 }} sx={{ mb: 4 }}>
               <Grid item xs={12} sm={6} md={4}>
-              <Card 
-                elevation={0}
-                sx={{ 
-                  borderRadius: 3, 
-                  height: '100%',
-                  background: 'linear-gradient(135deg, #133A1A 0%, #1a4d2a 100%)',
-                  color: 'white',
-                  position: 'relative',
-                  overflow: 'hidden',
-                  '&:hover': {
-                    transform: 'translateY(-4px)',
-                    boxShadow: '0 8px 32px rgba(19, 58, 26, 0.3)'
-                  },
-                  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                  '&::before': {
-                    content: '""',
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    background: 'linear-gradient(45deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%)',
-                    zIndex: 1
-                  }
-                }}
-              >
-                <CardContent sx={{ textAlign: 'center', p: 4, position: 'relative', zIndex: 2 }}>
-                  <Box sx={{ 
-                    width: 70, 
-                    height: 70, 
-                    borderRadius: '50%', 
-                    bgcolor: 'rgba(255, 255, 255, 0.2)', 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    justifyContent: 'center',
-                    mx: 'auto',
-                    mb: 3,
-                    border: '2px solid rgba(255, 255, 255, 0.3)'
-                  }}>
-                    <AttachMoneyIcon sx={{ color: 'white', fontSize: 35 }} />
-                  </Box>
-                  <Typography variant="h3" sx={{ 
-                    fontWeight: 800, 
+                <Card
+                  elevation={0}
+                  sx={{
+                    borderRadius: 3,
+                    height: '100%',
+                    background: 'linear-gradient(135deg, #133A1A 0%, #1a4d2a 100%)',
                     color: 'white',
-                    mb: 1,
-                    textShadow: '0 2px 4px rgba(0,0,0,0.1)'
-                  }}>
-                    ${(stats.totalExpenses || 0).toLocaleString()}
-                  </Typography>
-                  <Typography variant="body1" sx={{ 
-                    color: 'rgba(255, 255, 255, 0.9)',
-                    fontWeight: 500
-                  }}>
-                    {stats.expenseCount || 0} gastos registrados
-                  </Typography>
-                </CardContent>
-              </Card>
-            </Grid>
-            
-            <Grid item xs={12} sm={6} md={4}>
-              <Card 
-                elevation={0}
-                sx={{ 
-                  borderRadius: 3, 
-                  height: '100%',
-                  background: 'linear-gradient(135deg, #133A1A 0%, #1a4d2a 100%)',
-                  color: 'white',
-                  position: 'relative',
-                  overflow: 'hidden',
-                  '&:hover': {
-                    transform: 'translateY(-4px)',
-                    boxShadow: '0 8px 32px rgba(19, 58, 26, 0.3)'
-                  },
-                  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                  '&::before': {
-                    content: '""',
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    background: 'linear-gradient(45deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%)',
-                    zIndex: 1
-                  }
-                }}
-              >
-                <CardContent sx={{ textAlign: 'center', p: 4, position: 'relative', zIndex: 2 }}>
-                  <Box sx={{ 
-                    width: 70, 
-                    height: 70, 
-                    borderRadius: '50%', 
-                    bgcolor: 'rgba(255, 255, 255, 0.2)', 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    justifyContent: 'center',
-                    mx: 'auto',
-                    mb: 3,
-                    border: '2px solid rgba(255, 255, 255, 0.3)'
-                  }}>
-                    <GroupIcon sx={{ color: 'white', fontSize: 35 }} />
-                  </Box>
-                  <Typography variant="h3" sx={{ 
-                    fontWeight: 800, 
+                    position: 'relative',
+                    overflow: 'hidden',
+                    '&:hover': {
+                      transform: 'translateY(-4px)',
+                      boxShadow: '0 8px 32px rgba(19, 58, 26, 0.3)'
+                    },
+                    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                    '&::before': {
+                      content: '""',
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      background: 'linear-gradient(45deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%)',
+                      zIndex: 1
+                    }
+                  }}
+                >
+                  <CardContent sx={{ textAlign: 'center', p: 4, position: 'relative', zIndex: 2 }}>
+                    <Box sx={{
+                      width: 70,
+                      height: 70,
+                      borderRadius: '50%',
+                      bgcolor: 'rgba(255, 255, 255, 0.2)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      mx: 'auto',
+                      mb: 3,
+                      border: '2px solid rgba(255, 255, 255, 0.3)'
+                    }}>
+                      <AttachMoneyIcon sx={{ color: 'white', fontSize: 35 }} />
+                    </Box>
+                    <Typography variant="h3" sx={{
+                      fontWeight: 800,
+                      color: 'white',
+                      mb: 1,
+                      textShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                    }}>
+                      ${(stats.totalExpenses || 0).toLocaleString()}
+                    </Typography>
+                    <Typography variant="body1" sx={{
+                      color: 'rgba(255, 255, 255, 0.9)',
+                      fontWeight: 500
+                    }}>
+                      {stats.expenseCount || 0} gastos registrados
+                    </Typography>
+                  </CardContent>
+                </Card>
+              </Grid>
+
+              <Grid item xs={12} sm={6} md={4}>
+                <Card
+                  elevation={0}
+                  sx={{
+                    borderRadius: 3,
+                    height: '100%',
+                    background: 'linear-gradient(135deg, #133A1A 0%, #1a4d2a 100%)',
                     color: 'white',
-                    mb: 1,
-                    textShadow: '0 2px 4px rgba(0,0,0,0.1)'
-                  }}>
-                    {stats.memberCount || 0}
-                  </Typography>
-                  <Typography variant="body1" sx={{ 
-                    color: 'rgba(255, 255, 255, 0.9)',
-                    fontWeight: 500
-                  }}>
-                    miembros activos
-                  </Typography>
-                </CardContent>
-              </Card>
-            </Grid>
-            
-            <Grid item xs={12} sm={6} md={4}>
-              <Card 
-                elevation={0}
-                sx={{ 
-                  borderRadius: 3, 
-                  height: '100%',
-                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                  color: 'white',
-                  position: 'relative',
-                  overflow: 'hidden',
-                  '&:hover': {
-                    transform: 'translateY(-4px)',
-                    boxShadow: '0 8px 32px rgba(16, 185, 129, 0.3)'
-                  },
-                  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                  '&::before': {
-                    content: '""',
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    background: 'linear-gradient(45deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%)',
-                    zIndex: 1
-                  }
-                }}
-              >
-                <CardContent sx={{ textAlign: 'center', p: 4, position: 'relative', zIndex: 2 }}>
-                  <Box sx={{ 
-                    width: 70, 
-                    height: 70, 
-                    borderRadius: '50%', 
-                    bgcolor: 'rgba(255, 255, 255, 0.2)', 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    justifyContent: 'center',
-                    mx: 'auto',
-                    mb: 3,
-                    border: '2px solid rgba(255, 255, 255, 0.3)'
-                  }}>
-                    <TrendingUpIcon sx={{ color: 'white', fontSize: 35 }} />
-                  </Box>
-                  <Typography variant="h3" sx={{ 
-                    fontWeight: 800, 
+                    position: 'relative',
+                    overflow: 'hidden',
+                    '&:hover': {
+                      transform: 'translateY(-4px)',
+                      boxShadow: '0 8px 32px rgba(19, 58, 26, 0.3)'
+                    },
+                    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                    '&::before': {
+                      content: '""',
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      background: 'linear-gradient(45deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%)',
+                      zIndex: 1
+                    }
+                  }}
+                >
+                  <CardContent sx={{ textAlign: 'center', p: 4, position: 'relative', zIndex: 2 }}>
+                    <Box sx={{
+                      width: 70,
+                      height: 70,
+                      borderRadius: '50%',
+                      bgcolor: 'rgba(255, 255, 255, 0.2)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      mx: 'auto',
+                      mb: 3,
+                      border: '2px solid rgba(255, 255, 255, 0.3)'
+                    }}>
+                      <GroupIcon sx={{ color: 'white', fontSize: 35 }} />
+                    </Box>
+                    <Typography variant="h3" sx={{
+                      fontWeight: 800,
+                      color: 'white',
+                      mb: 1,
+                      textShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                    }}>
+                      {stats.memberCount || 0}
+                    </Typography>
+                    <Typography variant="body1" sx={{
+                      color: 'rgba(255, 255, 255, 0.9)',
+                      fontWeight: 500
+                    }}>
+                      miembros activos
+                    </Typography>
+                  </CardContent>
+                </Card>
+              </Grid>
+
+              <Grid item xs={12} sm={6} md={4}>
+                <Card
+                  elevation={0}
+                  sx={{
+                    borderRadius: 3,
+                    height: '100%',
+                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
                     color: 'white',
-                    mb: 1,
-                    textShadow: '0 2px 4px rgba(0,0,0,0.1)'
-                  }}>
-                    ${(stats.equitableDistribution || 0).toLocaleString()}
-                  </Typography>
-                  <Typography variant="body1" sx={{ 
-                    color: 'rgba(255, 255, 255, 0.9)',
-                    fontWeight: 500
-                  }}>
-                    Distribución equitativa
-                  </Typography>
-                </CardContent>
-              </Card>
+                    position: 'relative',
+                    overflow: 'hidden',
+                    '&:hover': {
+                      transform: 'translateY(-4px)',
+                      boxShadow: '0 8px 32px rgba(16, 185, 129, 0.3)'
+                    },
+                    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                    '&::before': {
+                      content: '""',
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      background: 'linear-gradient(45deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%)',
+                      zIndex: 1
+                    }
+                  }}
+                >
+                  <CardContent sx={{ textAlign: 'center', p: 4, position: 'relative', zIndex: 2 }}>
+                    <Box sx={{
+                      width: 70,
+                      height: 70,
+                      borderRadius: '50%',
+                      bgcolor: 'rgba(255, 255, 255, 0.2)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      mx: 'auto',
+                      mb: 3,
+                      border: '2px solid rgba(255, 255, 255, 0.3)'
+                    }}>
+                      <TrendingUpIcon sx={{ color: 'white', fontSize: 35 }} />
+                    </Box>
+                    <Typography variant="h3" sx={{
+                      fontWeight: 800,
+                      color: 'white',
+                      mb: 1,
+                      textShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                    }}>
+                      ${(stats.equitableDistribution || 0).toLocaleString()}
+                    </Typography>
+                    <Typography variant="body1" sx={{
+                      color: 'rgba(255, 255, 255, 0.9)',
+                      fontWeight: 500
+                    }}>
+                      Distribución equitativa
+                    </Typography>
+                  </CardContent>
+                </Card>
+              </Grid>
             </Grid>
-          </Grid>
           )}
 
           {/* Filtros y búsqueda */}
@@ -1329,78 +1600,76 @@ function GroupDetails() {
               Filtros y Búsqueda
             </Typography>
             <Grid container spacing={2} sx={{ mb: 3 }}>
-                    <Grid item xs={12} sm={6} md={3}>
-                      <TextField
-                        fullWidth
-                        placeholder="Buscar gastos..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        InputProps={{
-                          startAdornment: (
-                            <InputAdornment position="start">
-                              <SearchIcon />
-                            </InputAdornment>
-                          ),
-                        }}
-                      />
-                    </Grid>
-                    <Grid item xs={12} sm={6} md={3}>
-                      <FormControl fullWidth>
-                        <InputLabel>Tipo</InputLabel>
-                        <Select
-                          value={categoryFilter}
-                          label="Tipo"
-                          onChange={(e) => setCategoryFilter(e.target.value)}
-                        >
-                          <MenuItem value="all">Todos</MenuItem>
-                          <MenuItem value="expense">Gastos</MenuItem>
-                          <MenuItem value="payment">Pagos</MenuItem>
-                        </Select>
-                      </FormControl>
-                    </Grid>
-                    <Grid item xs={12} sm={6} md={3}>
-                      <Button
-                        variant="outlined"
-                        onClick={() => {
-                          setSearchTerm('');
-                          setCategoryFilter('all');
-                        }}
-                        sx={{ 
-                          height: 56,
-                          borderRadius: 2,
-                          textTransform: 'none',
-                          fontWeight: 600,
-                          color: 'white !important'
-                        }}
-                      >
-                        Limpiar Filtros
-                      </Button>
-                    </Grid>
-                    <Grid item xs={12} sm={6} md={3}>
-                      <Button
-                        variant="contained"
-                        onClick={() => setAddExpenseDialog({ open: true })}
-                        startIcon={<AddIcon />}
-                        sx={{ 
-                          height: 56,
-                          borderRadius: 2,
-                          textTransform: 'none',
-                          fontWeight: 600,
-                          bgcolor: '#133A1A',
-                          color: 'white !important',
-                          '&:hover': {
-                            bgcolor: '#1a4d2a',
-                            color: 'white !important'
-                          },
-                          '& .MuiButton-label': {
-                            color: 'white !important'
-                          }
-                        }}
-                      >
-                        Agregar Gasto
-                      </Button>
-                    </Grid>
-                  </Grid>
+              <Grid item xs={12} sm={6} md={3}>
+                <TextField
+                  fullWidth
+                  placeholder="Buscar gastos..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <SearchIcon />
+                      </InputAdornment>
+                    ),
+                  }}
+                />
+              </Grid>
+              <Grid item xs={12} sm={6} md={3}>
+                <FormControl fullWidth>
+                  <InputLabel>Tipo</InputLabel>
+                  <Select
+                    value={categoryFilter}
+                    label="Tipo"
+                    onChange={(e) => setCategoryFilter(e.target.value)}
+                  >
+                    <MenuItem value="all">Todos</MenuItem>
+                    <MenuItem value="expense">Gastos</MenuItem>
+                    <MenuItem value="payment">Pagos</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid item xs={12} sm={6} md={3}>
+                <Button
+                  variant="outlined"
+                  onClick={() => {
+                    setSearchTerm('');
+                    setCategoryFilter('all');
+                  }}
+                  sx={{
+                    height: 56,
+                    borderRadius: 2,
+                    textTransform: 'none',
+                    fontWeight: 600,
+                    color: 'white !important'
+                  }}
+                >
+                  Limpiar Filtros
+                </Button>
+              </Grid>
+              <Grid item xs={12} sm={6} md={3}>
+                <Box display="flex" gap={1} flexWrap="wrap">
+                  <Button
+                    variant="contained"
+                    onClick={() => setAddExpenseDialog({ open: true })}
+                    startIcon={<AddIcon />}
+                    sx={{
+                      height: 56,
+                      borderRadius: 2,
+                      textTransform: 'none',
+                      fontWeight: 600,
+                      bgcolor: 'primary.main',
+                      '&:hover': {
+                        bgcolor: 'primary.dark'
+                      }
+                    }}
+                  >
+                    Agregar Gasto
+                  </Button>
+
+                </Box>
+              </Grid>
+            </Grid>
           </Paper>
 
           {/* Lista de gastos */}
@@ -1423,76 +1692,105 @@ function GroupDetails() {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {filteredMovements.map((item) => (
-                    <TableRow key={`${item.type}-${item.id}`}>
-                      <TableCell>
-                        {new Date(item.date).toLocaleDateString('es-ES')}
-                      </TableCell>
-                      <TableCell>
-                        {item.type === 'expense' ? (
-                          <Chip 
-                            label="Gasto" 
-                            size="small"
-                            sx={{ 
-                              bgcolor: '#133A1A',
-                              color: 'white',
-                              fontWeight: 600,
-                              '& .MuiChip-label': { px: 1 }
-                            }}
-                          />
-                        ) : (
-                          <Chip 
-                            label="Pago" 
-                            size="small"
-                            sx={{ 
-                              bgcolor: '#70ca59',
-                              color: 'white',
-                              fontWeight: 600,
-                              '& .MuiChip-label': { px: 1 }
-                            }}
-                          />
-                        )}
-                      </TableCell>
-                      <TableCell>{item.description}</TableCell>
-                      <TableCell sx={{ fontWeight: 600, color: 'text.primary' }}>
-                        ${Number(item.amount).toLocaleString()}
-                      </TableCell>
-                      <TableCell>
-                        <Box display="flex" alignItems="center" gap={1}>
-                          <Avatar sx={{ width: 32, height: 32, bgcolor: '#133A1A' }}>
-                            {(item.paidBy && item.paidBy.charAt(0)) ? item.paidBy.charAt(0).toUpperCase() : 'U'}
-                          </Avatar>
-                          <Typography variant="body2">
-                            {item.paidBy || item.paidByEmail || 'Usuario'}
-                          </Typography>
-                        </Box>
-                      </TableCell>
-                      <TableCell>
-                        <Tooltip title="Eliminar">
-                          <IconButton
-                            onClick={() => {
-                              if (item.type === 'expense') {
-                                setDeleteDialog({ open: true, expense: item });
-                              } else if (item.type === 'payment') {
-                                setDeletePaymentDialog({ open: true, payment: item });
-                              }
-                            }}
-                            sx={{ 
-                              color: '#d32f2f',
-                              '&:hover': { 
-                                bgcolor: 'rgba(211, 47, 47, 0.1)' 
-                              }
-                            }}
-                          >
-                            <DeleteIcon />
-                          </IconButton>
-                        </Tooltip>
+                  {paginatedMovements.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={6} align="center" sx={{ py: 4 }}>
+                        <Typography variant="body1" color="text.secondary">
+                          {filteredMovements.length === 0
+                            ? 'No hay movimientos que coincidan con los filtros'
+                            : 'No hay más movimientos en esta página'}
+                        </Typography>
                       </TableCell>
                     </TableRow>
-                  ))}
+                  ) : (
+                    paginatedMovements.map((item) => (
+                      <TableRow key={`${item.type}-${item.id}`}>
+                        <TableCell>
+                          {new Date(item.date).toLocaleDateString('es-ES')}
+                        </TableCell>
+                        <TableCell>
+                          {item.type === 'expense' ? (
+                            <Chip
+                              label="Gasto"
+                              size="small"
+                              sx={{
+                                bgcolor: '#133A1A',
+                                color: 'white',
+                                fontWeight: 600,
+                                '& .MuiChip-label': { px: 1 }
+                              }}
+                            />
+                          ) : (
+                            <Chip
+                              label="Pago"
+                              size="small"
+                              sx={{
+                                bgcolor: '#70ca59',
+                                color: 'white',
+                                fontWeight: 600,
+                                '& .MuiChip-label': { px: 1 }
+                              }}
+                            />
+                          )}
+                        </TableCell>
+                        <TableCell>{item.description}</TableCell>
+                        <TableCell sx={{ fontWeight: 600, color: 'text.primary' }}>
+                          ${Number(item.amount).toLocaleString()}
+                        </TableCell>
+                        <TableCell>
+                          <Box display="flex" alignItems="center" gap={1}>
+                            <Avatar sx={{ width: 32, height: 32, bgcolor: '#133A1A' }}>
+                              {(item.paidBy && item.paidBy.charAt(0)) ? item.paidBy.charAt(0).toUpperCase() : 'U'}
+                            </Avatar>
+                            <Typography variant="body2">
+                              {item.paidBy || item.paidByEmail || 'Usuario'}
+                            </Typography>
+                          </Box>
+                        </TableCell>
+                        <TableCell>
+                          <Tooltip title="Eliminar">
+                            <IconButton
+                              onClick={() => {
+                                if (item.type === 'expense') {
+                                  setDeleteDialog({ open: true, expense: item });
+                                } else if (item.type === 'payment') {
+                                  setDeletePaymentDialog({ open: true, payment: item });
+                                }
+                              }}
+                              sx={{
+                                color: '#d32f2f',
+                                '&:hover': {
+                                  bgcolor: 'rgba(211, 47, 47, 0.1)'
+                                }
+                              }}
+                            >
+                              <DeleteIcon />
+                            </IconButton>
+                          </Tooltip>
+                        </TableCell>
+                      </TableRow>
+                    )))}
                 </TableBody>
               </Table>
             </TableContainer>
+            {filteredMovements.length > 0 && (
+              <Box sx={{ p: 2, borderTop: 1, borderColor: 'divider', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
+                <Typography variant="body2" color="text.secondary">
+                  Mostrando {page * rowsPerPage + 1} - {Math.min((page + 1) * rowsPerPage, filteredMovements.length)} de {filteredMovements.length} movimientos
+                </Typography>
+                <TablePagination
+                  component="div"
+                  count={filteredMovements.length}
+                  page={page}
+                  onPageChange={handleChangePage}
+                  rowsPerPage={rowsPerPage}
+                  onRowsPerPageChange={handleChangeRowsPerPage}
+                  rowsPerPageOptions={[5, 10, 25, 50]}
+                  labelRowsPerPage="Por página:"
+                  labelDisplayedRows={({ from, to, count }) => `${from}-${to} de ${count !== -1 ? count : `más de ${to}`}`}
+                />
+              </Box>
+            )}
           </Paper>
         </>
       )}
@@ -1501,13 +1799,42 @@ function GroupDetails() {
       {activeTab === 1 && (
         <>
           {/* Header */}
-          <Box sx={{ mb: 4 }}>
-            <Typography variant="h4" gutterBottom sx={{ fontWeight: 700 }}>
-              Análisis de Deudas
-            </Typography>
-            <Typography variant="subtitle1" color="text.secondary">
-              Distribución equitativa de gastos entre {stats.memberCount} miembros
-            </Typography>
+          <Box sx={{ mb: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
+            <Box>
+              <Typography variant="h4" gutterBottom sx={{ fontWeight: 700 }}>
+                Análisis de Deudas
+              </Typography>
+              <Typography variant="subtitle1" color="text.secondary">
+                Distribución equitativa de gastos entre {stats.memberCount} miembros
+              </Typography>
+            </Box>
+            <Button
+              variant="outlined"
+              startIcon={<FileDownloadIcon />}
+              onClick={() => {
+                try {
+                  exportDebtAnalysisToCSV(debtAnalysis, group);
+                  setSuccess('Análisis de deudas exportado a CSV exitosamente');
+                } catch (err) {
+                  setError('Error al exportar análisis: ' + err.message);
+                }
+              }}
+              disabled={!debtAnalysis || !debtAnalysis.memberBalances || debtAnalysis.memberBalances.length === 0}
+              sx={{
+                borderRadius: 2,
+                textTransform: 'none',
+                fontWeight: 600,
+                borderColor: 'primary.main',
+                color: 'white !important',
+                '&:hover': {
+                  borderColor: 'primary.dark',
+                  bgcolor: 'action.hover'
+                }
+              }}
+              aria-label="Exportar análisis de deudas a CSV"
+            >
+              Exportar Análisis
+            </Button>
           </Box>
 
           {/* Tarjetas de resumen */}
@@ -1515,13 +1842,13 @@ function GroupDetails() {
             <Grid item xs={12} sm={6} md={3}>
               <Card elevation={4} sx={{ borderRadius: 3, height: '100%' }}>
                 <CardContent sx={{ textAlign: 'center', p: 3 }}>
-                  <Box sx={{ 
-                    width: 60, 
-                    height: 60, 
-                    borderRadius: '50%', 
-                    bgcolor: 'primary.main', 
-                    display: 'flex', 
-                    alignItems: 'center', 
+                  <Box sx={{
+                    width: 60,
+                    height: 60,
+                    borderRadius: '50%',
+                    bgcolor: 'primary.main',
+                    display: 'flex',
+                    alignItems: 'center',
                     justifyContent: 'center',
                     mx: 'auto',
                     mb: 2
@@ -1540,17 +1867,17 @@ function GroupDetails() {
                 </CardContent>
               </Card>
             </Grid>
-            
+
             <Grid item xs={12} sm={6} md={3}>
               <Card elevation={4} sx={{ borderRadius: 3, height: '100%' }}>
                 <CardContent sx={{ textAlign: 'center', p: 3 }}>
-                  <Box sx={{ 
-                    width: 60, 
-                    height: 60, 
-                    borderRadius: '50%', 
-                    bgcolor: 'success.main', 
-                    display: 'flex', 
-                    alignItems: 'center', 
+                  <Box sx={{
+                    width: 60,
+                    height: 60,
+                    borderRadius: '50%',
+                    bgcolor: 'success.main',
+                    display: 'flex',
+                    alignItems: 'center',
                     justifyContent: 'center',
                     mx: 'auto',
                     mb: 2
@@ -1569,17 +1896,17 @@ function GroupDetails() {
                 </CardContent>
               </Card>
             </Grid>
-            
+
             <Grid item xs={12} sm={6} md={3}>
               <Card elevation={4} sx={{ borderRadius: 3, height: '100%' }}>
                 <CardContent sx={{ textAlign: 'center', p: 3 }}>
-                  <Box sx={{ 
-                    width: 60, 
-                    height: 60, 
-                    borderRadius: '50%', 
-                    bgcolor: 'warning.main', 
-                    display: 'flex', 
-                    alignItems: 'center', 
+                  <Box sx={{
+                    width: 60,
+                    height: 60,
+                    borderRadius: '50%',
+                    bgcolor: 'warning.main',
+                    display: 'flex',
+                    alignItems: 'center',
                     justifyContent: 'center',
                     mx: 'auto',
                     mb: 2
@@ -1618,11 +1945,11 @@ function GroupDetails() {
                     return debtAnalysis.memberBalances.map((member) => (
                       <Card key={member.email} sx={{ p: 2, borderRadius: 2 }}>
                         <Box display="flex" alignItems="center" gap={2}>
-                          <Avatar 
-                            sx={{ 
-                              width: 40, 
-                              height: 40, 
-                              bgcolor: member.isPositive ? 'success.main' : 'error.main' 
+                          <Avatar
+                            sx={{
+                              width: 40,
+                              height: 40,
+                              bgcolor: member.isPositive ? 'success.main' : 'error.main'
                             }}
                           >
                             {member.name ? member.name.charAt(0).toUpperCase() : member.email.charAt(0).toUpperCase()}
@@ -1657,7 +1984,7 @@ function GroupDetails() {
                               </Box>
                             )}
                           </Box>
-                          <Chip 
+                          <Chip
                             label={`$${member.balance.toFixed(2)}`}
                             color={member.isPositive ? 'success' : 'error'}
                             sx={{ fontWeight: 600 }}
@@ -1674,21 +2001,38 @@ function GroupDetails() {
             {/* Deudas Pendientes */}
             <Grid item xs={12} md={6}>
               <Paper elevation={3} sx={{ p: 3, borderRadius: 3, height: 'fit-content' }}>
-                <Typography variant="h6" gutterBottom sx={{ mb: 3 }}>
-                  Deudas Pendientes
-                </Typography>
+                <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
+                  <Typography variant="h6">
+                    Deudas Pendientes
+                  </Typography>
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={isSimplified}
+                        onChange={handleSimplifyDebts}
+                        color="success"
+                      />
+                    }
+                    label={
+                      <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                        Simplificar
+                      </Typography>
+                    }
+                  />
+                </Box>
+
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  {debtAnalysis.pendingDebts.length > 0 ? (
-                    debtAnalysis.pendingDebts.map((debt, index) => (
+                  {debtsToShow.length > 0 ? (
+                    debtsToShow.map((debt, index) => (
                       <Card key={index} sx={{ p: 2, borderRadius: 2 }}>
                         <Box display="flex" alignItems="center" gap={2}>
-                          <Box sx={{ 
-                            width: 40, 
-                            height: 40, 
-                            borderRadius: '50%', 
-                            bgcolor: 'warning.main', 
-                            display: 'flex', 
-                            alignItems: 'center', 
+                          <Box sx={{
+                            width: 40,
+                            height: 40,
+                            borderRadius: '50%',
+                            bgcolor: 'warning.main',
+                            display: 'flex',
+                            alignItems: 'center',
                             justifyContent: 'center'
                           }}>
                             <SwapHorizIcon sx={{ color: 'white', fontSize: 20 }} />
@@ -1715,11 +2059,11 @@ function GroupDetails() {
                   ) : (
                     <Box sx={{ textAlign: 'center', py: 4 }}>
                       <Typography variant="body1" color="text.secondary">
-                        No hay deudas pendientes
+                        {isSimplified ? 'No hay deudas para simplificar' : 'No hay deudas pendientes'}
                       </Typography>
                     </Box>
                   )}
-                  
+
                   {/* Botón para registrar pago */}
                   <Box sx={{ mt: 3, display: 'flex', justifyContent: 'center' }}>
                     <Button
@@ -1763,8 +2107,23 @@ function GroupDetails() {
         </>
       )}
 
-      {/* Contenido de la pestaña Miembros */}
+      {/* Contenido de la pestaña Análisis */}
       {activeTab === 2 && (
+        <>
+          <Box sx={{ mb: 4 }}>
+            <Typography variant="h4" gutterBottom sx={{ fontWeight: 700 }}>
+              Análisis de Gastos
+            </Typography>
+            <Typography variant="subtitle1" color="text.secondary">
+              Visualiza y analiza los gastos del grupo
+            </Typography>
+          </Box>
+          <ExpenseCharts expenses={expenses} />
+        </>
+      )}
+
+      {/* Contenido de la pestaña Miembros */}
+      {activeTab === 3 && (
         <>
           {/* Header */}
           <Box sx={{ mb: 4 }}>
@@ -1783,10 +2142,10 @@ function GroupDetails() {
                 <Card elevation={3} sx={{ borderRadius: 3, height: '100%' }}>
                   <CardContent sx={{ p: 3 }}>
                     <Box display="flex" alignItems="center" gap={2} mb={2}>
-                      <Avatar 
-                        sx={{ 
-                          width: 56, 
-                          height: 56, 
+                      <Avatar
+                        sx={{
+                          width: 56,
+                          height: 56,
                           bgcolor: 'primary.main',
                           fontSize: '1.2rem',
                           fontWeight: 600
@@ -1799,29 +2158,29 @@ function GroupDetails() {
                         <Typography variant="h6" sx={{ fontWeight: 600, mb: 0.5 }}>
                           {member.user?.email || 'Usuario'}
                         </Typography>
-                        <Chip 
+                        <Chip
                           label={member.id === group.creator_id ? 'Propietario' : 'Miembro'}
                           color={member.id === group.creator_id ? 'error' : 'default'}
                           size="small"
-                          sx={{ 
+                          sx={{
                             bgcolor: member.id === group.creator_id ? '#ffebee' : '#f5f5f5',
                             color: member.id === group.creator_id ? '#d32f2f' : '#666'
                           }}
                         />
                       </Box>
                     </Box>
-                    
+
                     <Typography variant="body2" color="text.secondary">
-                      Miembro desde: {member.fecha_union ? 
+                      Miembro desde: {member.fecha_union ?
                         new Date(member.fecha_union).toLocaleDateString('es-ES', {
                           year: 'numeric',
                           month: 'long',
                           day: 'numeric'
-                        }) : 
+                        }) :
                         'Fecha no disponible'
                       }
                     </Typography>
-                    
+
                     {member.id === group.creator_id && (
                       <Typography variant="body2" color="primary" sx={{ mt: 1, fontWeight: 500 }}>
                         👑 Creador del grupo
@@ -1843,13 +2202,13 @@ function GroupDetails() {
           {/* Estado vacío */}
           {(!group?.members || group.members.length === 0) && (
             <Paper sx={{ p: 4, textAlign: 'center', mt: 4 }}>
-              <Box sx={{ 
-                width: 80, 
-                height: 80, 
-                borderRadius: '50%', 
-                bgcolor: 'grey.100', 
-                display: 'flex', 
-                alignItems: 'center', 
+              <Box sx={{
+                width: 80,
+                height: 80,
+                borderRadius: '50%',
+                bgcolor: 'grey.100',
+                display: 'flex',
+                alignItems: 'center',
                 justifyContent: 'center',
                 mx: 'auto',
                 mb: 2
@@ -1865,6 +2224,13 @@ function GroupDetails() {
             </Paper>
           )}
         </>
+      )}
+
+      {/* Contenido de la pestaña Actividad */}
+      {activeTab === 4 && (
+        <Box sx={{ mt: 3 }}>
+          <ActivityList groupId={groupId} />
+        </Box>
       )}
 
       {/* Dialog de confirmación de eliminación de gasto */}
@@ -1886,10 +2252,10 @@ function GroupDetails() {
       />
 
       {/* Dialog de invitar miembro */}
-      <Dialog 
-        open={inviteDialog.open} 
-        onClose={handleCloseInviteDialog} 
-        maxWidth="sm" 
+      <Dialog
+        open={inviteDialog.open}
+        onClose={handleCloseInviteDialog}
+        maxWidth="sm"
         fullWidth
       >
         <DialogTitle>
@@ -1902,7 +2268,7 @@ function GroupDetails() {
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
             Invita a familiares, amigos o compañeros para compartir gastos en este grupo.
           </Typography>
-          
+
           <TextField
             label="Email del miembro"
             type="email"
@@ -1923,9 +2289,9 @@ function GroupDetails() {
           />
         </DialogContent>
         <DialogActions>
-          <Button 
+          <Button
             onClick={handleCloseInviteDialog}
-            sx={{ 
+            sx={{
               borderRadius: 2,
               textTransform: 'none',
               fontWeight: 600,
@@ -1934,12 +2300,12 @@ function GroupDetails() {
           >
             Cancelar
           </Button>
-          <Button 
-            onClick={handleInviteMember} 
+          <Button
+            onClick={handleInviteMember}
             variant="contained"
             disabled={!inviteEmail.trim()}
             startIcon={<PersonAddIcon />}
-            sx={{ 
+            sx={{
               borderRadius: 2,
               textTransform: 'none',
               fontWeight: 600,
@@ -1960,10 +2326,10 @@ function GroupDetails() {
       </Dialog>
 
       {/* Dialog de agregar gasto */}
-      <Dialog 
-        open={addExpenseDialog.open} 
-        onClose={handleCloseAddExpenseDialog} 
-        maxWidth="md" 
+      <Dialog
+        open={addExpenseDialog.open}
+        onClose={handleCloseAddExpenseDialog}
+        maxWidth="md"
         fullWidth
       >
         <DialogTitle>
@@ -1976,7 +2342,7 @@ function GroupDetails() {
           <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
             Agrega un nuevo gasto compartido al grupo.
           </Typography>
-          
+
           <Grid container spacing={3}>
             <Grid item xs={12} sm={6}>
               <TextField
@@ -1985,35 +2351,60 @@ function GroupDetails() {
                 fullWidth
                 value={newExpense.monto}
                 onChange={(e) => handleExpenseChange('monto', e.target.value)}
-                error={!!expenseError && !newExpense.monto}
+                onBlur={() => handleExpenseBlur('monto')}
+                error={!!expenseFieldErrors.monto}
+                helperText={expenseFieldErrors.monto}
                 InputProps={{
                   startAdornment: <InputAdornment position="start">$</InputAdornment>,
                 }}
                 placeholder="0.00"
+                inputProps={{ min: 0, step: 0.01 }}
               />
             </Grid>
-            
+
             <Grid item xs={12} sm={6}>
-              <FormControl fullWidth error={!!expenseError && !newExpense.categoria}>
-                <InputLabel>Categoría</InputLabel>
-                <Select
-                  value={newExpense.categoria}
-                  label="Categoría"
-                  onChange={(e) => handleExpenseChange('categoria', e.target.value)}
-                >
-                  <MenuItem value="Comida">Comida</MenuItem>
-                  <MenuItem value="Transporte">Transporte</MenuItem>
-                  <MenuItem value="Vivienda">Vivienda</MenuItem>
-                  <MenuItem value="Entretenimiento">Entretenimiento</MenuItem>
-                  <MenuItem value="Salud">Salud</MenuItem>
-                  <MenuItem value="Educación">Educación</MenuItem>
-                  <MenuItem value="Ropa">Ropa</MenuItem>
-                  <MenuItem value="Hogar">Hogar</MenuItem>
-                  <MenuItem value="Otros">Otros</MenuItem>
-                </Select>
-              </FormControl>
+              <Box display="flex" alignItems="flex-start" gap={1}>
+                <FormControl fullWidth error={!!expenseFieldErrors.categoria}>
+                  <InputLabel>Categoría</InputLabel>
+                  <Select
+                    value={newExpense.categoria}
+                    label="Categoría"
+                    onChange={(e) => {
+                      if (e.target.value === '__MANAGE_CATEGORIES__') {
+                        setCategoryManagerOpen(true);
+                      } else {
+                        handleExpenseChange('categoria', e.target.value);
+                      }
+                    }}
+                    onBlur={() => handleExpenseBlur('categoria')}
+                  >
+                    {availableCategories.length > 0 ? (
+                      availableCategories.map(cat => (
+                        <MenuItem key={cat.id || cat.name} value={cat.name}>
+                          <Box display="flex" alignItems="center" gap={1}>
+                            {/* Aquí podríamos renderizar el icono si lo mapeamos */}
+                            {cat.name}
+                          </Box>
+                        </MenuItem>
+                      ))
+                    ) : (
+                      <MenuItem disabled>Cargando categorías...</MenuItem>
+                    )}
+                    <Divider />
+                    <MenuItem value="__MANAGE_CATEGORIES__" sx={{ color: 'primary.main', fontWeight: 600 }}>
+                      <Box display="flex" alignItems="center" gap={1}>
+                        <SettingsIcon fontSize="small" />
+                        Gestionar Categorías
+                      </Box>
+                    </MenuItem>
+                  </Select>
+                  {expenseFieldErrors.categoria && (
+                    <FormHelperText>{expenseFieldErrors.categoria}</FormHelperText>
+                  )}
+                </FormControl>
+              </Box>
             </Grid>
-            
+
             <Grid item xs={12} sm={6}>
               <TextField
                 label="Descripción"
@@ -2022,11 +2413,14 @@ function GroupDetails() {
                 rows={3}
                 value={newExpense.descripcion}
                 onChange={(e) => handleExpenseChange('descripcion', e.target.value)}
-                error={!!expenseError && !newExpense.descripcion.trim()}
+                onBlur={() => handleExpenseBlur('descripcion')}
+                error={!!expenseFieldErrors.descripcion}
+                helperText={expenseFieldErrors.descripcion || `${newExpense.descripcion.length}/200 caracteres`}
                 placeholder="Describe el gasto..."
+                inputProps={{ maxLength: 200 }}
               />
             </Grid>
-            
+
             <Grid item xs={12} sm={6}>
               <TextField
                 label="Fecha"
@@ -2034,7 +2428,9 @@ function GroupDetails() {
                 fullWidth
                 value={newExpense.fecha}
                 onChange={(e) => handleExpenseChange('fecha', e.target.value)}
-                error={!!expenseError && !newExpense.fecha}
+                onBlur={() => handleExpenseBlur('fecha')}
+                error={!!expenseFieldErrors.fecha}
+                helperText={expenseFieldErrors.fecha}
                 InputProps={{
                   endAdornment: (
                     <InputAdornment position="end">
@@ -2042,6 +2438,7 @@ function GroupDetails() {
                     </InputAdornment>
                   ),
                 }}
+                inputProps={{ max: new Date().toISOString().split('T')[0] }}
               />
             </Grid>
           </Grid>
@@ -2053,9 +2450,9 @@ function GroupDetails() {
           )}
         </DialogContent>
         <DialogActions>
-          <Button 
+          <Button
             onClick={handleCloseAddExpenseDialog}
-            sx={{ 
+            sx={{
               borderRadius: 2,
               textTransform: 'none',
               fontWeight: 600,
@@ -2064,12 +2461,12 @@ function GroupDetails() {
           >
             Cancelar
           </Button>
-          <Button 
-            onClick={handleAddExpense} 
+          <Button
+            onClick={handleAddExpense}
             variant="contained"
             disabled={!newExpense.monto || !newExpense.categoria || !newExpense.descripcion.trim() || !newExpense.fecha}
             startIcon={<AddIcon />}
-            sx={{ 
+            sx={{
               borderRadius: 2,
               textTransform: 'none',
               fontWeight: 600,
@@ -2090,10 +2487,10 @@ function GroupDetails() {
       </Dialog>
 
       {/* Dialog de pago de deuda */}
-      <Dialog 
-        open={debtPaymentDialog.open} 
-        onClose={handleCloseDebtPaymentDialog} 
-        maxWidth="md" 
+      <Dialog
+        open={debtPaymentDialog.open}
+        onClose={handleCloseDebtPaymentDialog}
+        maxWidth="md"
         fullWidth
       >
         <DialogTitle>
@@ -2106,15 +2503,16 @@ function GroupDetails() {
           <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
             Registra el pago de una deuda entre miembros del grupo.
           </Typography>
-          
+
           <Grid container spacing={3}>
             <Grid item xs={12} sm={6}>
-              <FormControl fullWidth error={!!paymentError && !newPayment.receiver_id}>
+              <FormControl fullWidth error={!!paymentFieldErrors.receiver_id}>
                 <InputLabel>Pagar a</InputLabel>
                 <Select
                   value={newPayment.receiver_id}
                   label="Pagar a"
                   onChange={(e) => handlePaymentChange('receiver_id', e.target.value)}
+                  onBlur={() => handlePaymentBlur('receiver_id')}
                 >
                   {group?.members?.map((member) => (
                     <MenuItem key={member.user?.id} value={member.user?.id}>
@@ -2122,12 +2520,16 @@ function GroupDetails() {
                     </MenuItem>
                   ))}
                 </Select>
-                <FormHelperText>
-                  Miembros disponibles: {group?.members?.length || 0}
-                </FormHelperText>
+                {paymentFieldErrors.receiver_id ? (
+                  <FormHelperText error>{paymentFieldErrors.receiver_id}</FormHelperText>
+                ) : (
+                  <FormHelperText>
+                    Miembros disponibles: {group?.members?.length || 0}
+                  </FormHelperText>
+                )}
               </FormControl>
             </Grid>
-            
+
             <Grid item xs={12} sm={6}>
               <TextField
                 label="Monto"
@@ -2135,25 +2537,31 @@ function GroupDetails() {
                 fullWidth
                 value={newPayment.amount}
                 onChange={(e) => handlePaymentChange('amount', e.target.value)}
-                error={!!paymentError && !newPayment.amount}
+                onBlur={() => handlePaymentBlur('amount')}
+                error={!!paymentFieldErrors.amount}
+                helperText={paymentFieldErrors.amount}
                 InputProps={{
                   startAdornment: <InputAdornment position="start">$</InputAdornment>,
                 }}
                 placeholder="0.00"
+                inputProps={{ min: 0, step: 0.01 }}
               />
             </Grid>
-            
+
             <Grid item xs={12} sm={6}>
               <TextField
                 label="Descripción"
                 fullWidth
                 value={newPayment.description}
                 onChange={(e) => handlePaymentChange('description', e.target.value)}
-                error={!!paymentError && !newPayment.description.trim()}
+                onBlur={() => handlePaymentBlur('description')}
+                error={!!paymentFieldErrors.description}
+                helperText={paymentFieldErrors.description || `${newPayment.description.length}/200 caracteres`}
                 placeholder="Describe el pago..."
+                inputProps={{ maxLength: 200 }}
               />
             </Grid>
-            
+
             <Grid item xs={12} sm={6}>
               <FormControl fullWidth>
                 <InputLabel>Método de Pago</InputLabel>
@@ -2169,7 +2577,7 @@ function GroupDetails() {
                 </Select>
               </FormControl>
             </Grid>
-            
+
             <Grid item xs={12}>
               <TextField
                 label="Notas (opcional)"
@@ -2190,9 +2598,9 @@ function GroupDetails() {
           )}
         </DialogContent>
         <DialogActions>
-          <Button 
+          <Button
             onClick={handleCloseDebtPaymentDialog}
-            sx={{ 
+            sx={{
               borderRadius: 2,
               textTransform: 'none',
               fontWeight: 600,
@@ -2201,12 +2609,12 @@ function GroupDetails() {
           >
             Cancelar
           </Button>
-          <Button 
-            onClick={handleCreateDebtPayment} 
+          <Button
+            onClick={handleCreateDebtPayment}
             variant="contained"
             disabled={!newPayment.receiver_id || !newPayment.amount || !newPayment.description.trim()}
             startIcon={<SwapHorizIcon />}
-            sx={{ 
+            sx={{
               borderRadius: 2,
               textTransform: 'none',
               fontWeight: 600,
@@ -2226,6 +2634,103 @@ function GroupDetails() {
         </DialogActions>
       </Dialog>
 
+      {/* Dialog de confirmación para pagos grandes */}
+      <Dialog
+        open={confirmPaymentDialog.open}
+        onClose={() => setConfirmPaymentDialog({ open: false, paymentData: null })}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            boxShadow: '0 8px 32px rgba(0,0,0,0.12)'
+          }
+        }}
+      >
+        <DialogTitle sx={{ pb: 1 }}>
+          <Box display="flex" alignItems="center" gap={1.5}>
+            <Box
+              sx={{
+                width: 40,
+                height: 40,
+                borderRadius: 2,
+                bgcolor: 'warning.main',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'white'
+              }}
+            >
+              <SwapHorizIcon />
+            </Box>
+            <Typography variant="h6" sx={{ fontWeight: 700 }}>
+              Confirmar Pago Grande
+            </Typography>
+          </Box>
+        </DialogTitle>
+        <DialogContent sx={{ pt: 2 }}>
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            Estás a punto de registrar un pago de <strong>${confirmPaymentDialog.paymentData?.amount?.toLocaleString()}</strong>
+          </Alert>
+
+          <Box sx={{
+            p: 2,
+            bgcolor: 'background.default',
+            borderRadius: 2,
+            border: '1px solid',
+            borderColor: 'divider'
+          }}>
+            <Typography variant="body2" color="text.secondary" gutterBottom>
+              Detalles del pago:
+            </Typography>
+            <Typography variant="body1" sx={{ fontWeight: 600, mb: 1 }}>
+              Pagar a: {confirmPaymentDialog.paymentData?.receiverName}
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Monto: <strong>${confirmPaymentDialog.paymentData?.amount?.toLocaleString()}</strong>
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Descripción: {confirmPaymentDialog.paymentData?.description}
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Método: {confirmPaymentDialog.paymentData?.payment_method}
+            </Typography>
+          </Box>
+
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+            ¿Estás seguro de que quieres registrar este pago?
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ p: 3, pt: 1 }}>
+          <Button
+            onClick={() => setConfirmPaymentDialog({ open: false, paymentData: null })}
+            sx={{
+              borderRadius: 2,
+              textTransform: 'none',
+              fontWeight: 600
+            }}
+          >
+            Cancelar
+          </Button>
+          <Button
+            onClick={() => confirmPaymentDialog.paymentData && processPayment(confirmPaymentDialog.paymentData)}
+            variant="contained"
+            startIcon={<SwapHorizIcon />}
+            sx={{
+              borderRadius: 2,
+              textTransform: 'none',
+              fontWeight: 600,
+              bgcolor: 'primary.main',
+              '&:hover': {
+                bgcolor: 'primary.dark'
+              }
+            }}
+          >
+            Confirmar Pago
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       {/* Snackbars */}
       <Snackbar open={!!success} autoHideDuration={3000} onClose={() => setSuccess('')}>
         <Alert severity="success" sx={{ width: '100%' }}>
@@ -2237,6 +2742,10 @@ function GroupDetails() {
           {error}
         </Alert>
       </Snackbar>
+      <CategoryManager
+        open={categoryManagerOpen}
+        onClose={() => setCategoryManagerOpen(false)}
+      />
     </Container>
   );
 }

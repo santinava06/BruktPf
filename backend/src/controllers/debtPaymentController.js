@@ -2,6 +2,7 @@ import DebtPayment from '../models/DebtPayment.js';
 import User from '../models/user.js';
 import GroupMember from '../models/GroupMember.js';
 import ExpenseGroup from '../models/ExpenseGroup.js';
+import { logActivity } from '../services/activityLogger.js';
 
 // Registrar un pago de deuda
 export const createDebtPayment = async (req, res) => {
@@ -112,6 +113,20 @@ export const createDebtPayment = async (req, res) => {
       }
     });
 
+    // Registrar actividad
+    await logActivity({
+      userId,
+      groupId,
+      actionType: 'CREATE_PAYMENT',
+      entityType: 'PAYMENT',
+      entityId: payment.id,
+      details: {
+        amount: payment.amount,
+        receiverId: receiver_id,
+        description: description || 'Pago de deuda'
+      }
+    });
+
   } catch (error) {
     console.error('Error al crear pago de deuda:', error);
     res.status(500).json({
@@ -193,6 +208,19 @@ export const deleteDebtPayment = async (req, res) => {
         payment_date: payment.payment_date,
         status: payment.status,
         notes: payment.notes
+      }
+    });
+
+    // Registrar actividad
+    await logActivity({
+      userId,
+      groupId,
+      actionType: 'DELETE_PAYMENT',
+      entityType: 'PAYMENT',
+      entityId: paymentId,
+      details: {
+        amount: payment.amount,
+        description: payment.description
       }
     });
 

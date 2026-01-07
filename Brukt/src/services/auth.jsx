@@ -1,8 +1,8 @@
 // Determinar URL del backend para auth
-const isLocalhost = typeof window !== 'undefined' && 
+const isLocalhost = typeof window !== 'undefined' &&
   (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 
-const API_URL = isLocalhost 
+const API_URL = isLocalhost
   ? 'http://localhost:3001/api/auth'  // Desarrollo local
   : 'https://bruktpf-backend.onrender.com/api/auth';  // Producción (Vercel)
 
@@ -13,22 +13,22 @@ export async function login(email, password) {
   try {
     console.log('🔍 Enviando petición de login a:', `${API_URL}/login`);
     console.log('📋 Datos:', { email, password });
-    
+
     const res = await fetch(`${API_URL}/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
     });
-    
+
     console.log('📊 Status:', res.status);
     console.log('📋 Headers:', Object.fromEntries(res.headers.entries()));
-    
+
     if (!res.ok) {
       const errorData = await res.json().catch(() => ({}));
       console.error('❌ Error response:', errorData);
       throw new Error(errorData.error || 'Login fallido');
     }
-    
+
     const data = await res.json();
     console.log('✅ Login response:', data);
     return data;
@@ -45,12 +45,12 @@ export async function register(nombre, apellido, email, password) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ nombre, apellido, email, password }),
     });
-    
+
     if (!res.ok) {
       const errorData = await res.json().catch(() => ({}));
       throw new Error(errorData.error || 'Registro fallido');
     }
-    
+
     return await res.json();
   } catch (error) {
     console.error('Error en registro:', error);
@@ -81,7 +81,7 @@ export function logout() {
 export function isTokenValid() {
   const token = getToken();
   if (!token) return false;
-  
+
   try {
     // Decodificar el token para verificar si no ha expirado
     const payload = JSON.parse(atob(token.split('.')[1]));
@@ -90,7 +90,7 @@ export function isTokenValid() {
   } catch {
     return false;
   }
-} 
+}
 
 // Función para cambiar contraseña
 export async function changePassword(currentPassword, newPassword) {
@@ -102,24 +102,24 @@ export async function changePassword(currentPassword, newPassword) {
 
     const res = await fetch(`${API_URL}/change-password`, {
       method: 'PUT',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
       body: JSON.stringify({ currentPassword, newPassword }),
     });
-    
+
     if (!res.ok) {
       const errorData = await res.json().catch(() => ({}));
       throw new Error(errorData.error || 'Error al cambiar contraseña');
     }
-    
+
     return await res.json();
   } catch (error) {
     console.error('Error al cambiar contraseña:', error);
     throw error;
   }
-} 
+}
 
 // Función para solicitar recuperación de contraseña
 export async function forgotPassword(email) {
@@ -129,12 +129,12 @@ export async function forgotPassword(email) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email }),
     });
-    
+
     if (!res.ok) {
       const errorData = await res.json().catch(() => ({}));
       throw new Error(errorData.error || 'Error al solicitar recuperación');
     }
-    
+
     return await res.json();
   } catch (error) {
     console.error('Error al solicitar recuperación:', error);
@@ -150,12 +150,12 @@ export async function resetPassword(token, newPassword) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token, newPassword }),
     });
-    
+
     if (!res.ok) {
       const errorData = await res.json().catch(() => ({}));
       throw new Error(errorData.error || 'Error al resetear contraseña');
     }
-    
+
     return await res.json();
   } catch (error) {
     console.error('Error al resetear contraseña:', error);
@@ -173,18 +173,18 @@ export async function updateProfile(profileData) {
 
     const res = await fetch(`${API_URL}/profile`, {
       method: 'PUT',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
       body: JSON.stringify(profileData),
     });
-    
+
     if (!res.ok) {
       const errorData = await res.json().catch(() => ({}));
       throw new Error(errorData.error || 'Error al actualizar perfil');
     }
-    
+
     return await res.json();
   } catch (error) {
     console.error('Error al actualizar perfil:', error);
