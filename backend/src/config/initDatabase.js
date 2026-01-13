@@ -12,9 +12,13 @@ const syncDatabase = async () => {
     setupAssociations();
 
     // Sincronizar todos los modelos (sin forzar recreación)
-    await sequelize.sync({ force: false, alter: true });
-
-    console.log('✅ Base de datos sincronizada correctamente');
+    // En producción no se sincroniza automáticamente salvo que se indique DB_SYNC=true
+    if (process.env.NODE_ENV !== 'production' || process.env.DB_SYNC === 'true') {
+      await sequelize.sync({ alter: true });
+      console.log('✅ Base de datos sincronizada correctamente');
+    } else {
+      console.log('⏭️ Omitiendo sequelize.sync() en producción. Usa migraciones para aplicar cambios en la BD.');
+    }
     console.log('📊 Tablas creadas:');
     console.log('   - users');
     console.log('   - expenses');
@@ -25,8 +29,10 @@ const syncDatabase = async () => {
     console.log('   - debt_payments');
     console.log('   - categories');
 
-    // Ejecutar seeders
-    await seedCategories();
+    // Ejecutar seeders (solo en entornos no-productivos o si DB_SYNC=true)
+    if (process.env.NODE_ENV !== 'production' || process.env.DB_SYNC === 'true') {
+      await seedCategories();
+    }
 
   } catch (error) {
     console.error('❌ Error al sincronizar la base de datos:', error);

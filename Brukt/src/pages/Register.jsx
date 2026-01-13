@@ -124,7 +124,7 @@ function Register() {
               fullWidth
               label="Nombre"
               name="nombre"
-              value={formData.nombre}
+              placeholder='Tu nombre'
               onChange={handleChange}
               required
               sx={{ mb: 3 }}
@@ -140,6 +140,7 @@ function Register() {
               fullWidth
               label="Apellido"
               name="apellido"
+              placeholder='Tu apellido'
               value={formData.apellido}
               onChange={handleChange}
               required
@@ -157,6 +158,7 @@ function Register() {
               label="Email"
               name="email"
               type="email"
+              placeholder='ejemplo@gmail.com'
               value={formData.email}
               onChange={handleChange}
               required

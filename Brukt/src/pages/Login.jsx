@@ -110,6 +110,7 @@ function Login() {
               label="Email"
               name="email"
               type="email"
+              placeholder='ejemplo@gmail.com'
               value={formData.email}
               onChange={handleChange}
               required
@@ -126,6 +127,7 @@ function Login() {
               fullWidth
               label="Contraseña"
               name="password"
+              placeholder='tu contrasenia'
               type={showPassword ? 'text' : 'password'}
               value={formData.password}
               onChange={handleChange}

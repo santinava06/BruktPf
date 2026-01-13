@@ -142,19 +142,19 @@ function Settings() {
                         icon={<NotificationsIcon />}
                         label="Notificaciones"
                         iconPosition="start"
-                        sx={{ color: 'white !important' }}
+                        sx={{ color: 'white !important', borderRadius: 5, marginRight: 2 }}
                     />
                     <Tab
                         icon={<LanguageIcon />}
                         label="Moneda y Formato"
                         iconPosition="start"
-                        sx={{ color: 'white !important' }}
+                        sx={{ color: 'white !important', borderRadius: 5, marginRight: 2 }}
                     />
                     <Tab
                         icon={<SecurityIcon />}
                         label="Privacidad"
                         iconPosition="start"
-                        sx={{ color: 'white !important' }}
+                        sx={{ color: 'white !important', borderRadius: 5, marginRight: 2 }}
                     />
                 </Tabs>
 
