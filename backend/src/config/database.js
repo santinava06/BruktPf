@@ -43,28 +43,42 @@ if (connectionString) {
     const dbPort = url.port || '5432';
     
     // Construir configuración explícita
+    // Solución al error SASL: usar configuración SSL más simple o deshabilitarla si es necesario
     const config = {
       ...commonOptions,
       host: dbHost,
       port: parseInt(dbPort),
       database: dbName,
       username: dbUser,
-      password: dbPassword,
-      dialectOptions: {
-        ssl: (isProduction || isRender) ? {
-          require: true,
-          rejectUnauthorized: false
-        } : process.env.DB_SSL === 'true' ? {
-          require: true,
-          rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false'
-        } : undefined
-      }
+      password: dbPassword
     };
     
-    // Si no hay SSL, eliminar dialectOptions
-    if (!config.dialectOptions.ssl) {
-      delete config.dialectOptions;
+    // Configurar SSL solo si no está explícitamente deshabilitado
+    // El error SASL puede resolverse deshabilitando SSL o usando una configuración más simple
+    if (process.env.DB_SSL !== 'false' && (isProduction || isRender)) {
+      // Intentar con SSL primero, pero con configuración mínima
+      config.dialectOptions = {
+        ssl: process.env.DB_SSL_MODE === 'disable' ? false : {
+          require: true,
+          rejectUnauthorized: false
+        }
+      };
+      
+      // Si DB_SSL_MODE está en 'disable', no agregar dialectOptions
+      if (process.env.DB_SSL_MODE === 'disable') {
+        delete config.dialectOptions;
+      }
+    } else if (process.env.DB_SSL === 'true') {
+      config.dialectOptions = {
+        ssl: {
+          require: true,
+          rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false'
+        }
+      };
     }
+    
+    console.log(`🔧 Configurando conexión a: ${dbHost}:${dbPort}/${dbName}`);
+    console.log(`🔒 SSL: ${config.dialectOptions?.ssl ? (config.dialectOptions.ssl === false ? 'disabled' : 'enabled') : 'not configured'}`);
     
     sequelize = new Sequelize(dbName, dbUser, dbPassword, config);
   } catch (parseError) {
@@ -118,10 +132,19 @@ if (connectionString) {
 // Función para probar la conexión
 const testConnection = async () => {
   try {
+    console.log('🔍 Intentando conectar a PostgreSQL...');
+    if (connectionString) {
+      const url = new URL(connectionString);
+      console.log(`📊 Host: ${url.hostname}:${url.port || '5432'}`);
+      console.log(`📋 Database: ${url.pathname.slice(1)}`);
+      console.log(`👤 User: ${url.username}`);
+    }
+    
     await sequelize.authenticate();
     console.log('✅ Conexión a PostgreSQL establecida correctamente.');
     if (connectionString) {
-      console.log('📊 Base de datos: Conexión via DATABASE_URL');
+      const source = process.env.INTERNAL_DATABASE_URL ? 'INTERNAL_DATABASE_URL' : 'DATABASE_URL';
+      console.log(`📊 Base de datos: Conexión via ${source}`);
     } else {
       console.log('📊 Base de datos: Local Development');
       console.log('🔗 Host:', process.env.DB_HOST);
@@ -129,6 +152,10 @@ const testConnection = async () => {
     }
   } catch (error) {
     console.error('❌ Error al conectar con PostgreSQL:', error.message);
+    console.error('❌ Error completo:', error.name);
+    if (error.parent) {
+      console.error('❌ Error padre:', error.parent.message);
+    }
     console.log('');
     console.log('🔧 Posibles soluciones:');
     if (process.env.NODE_ENV === 'production') {
@@ -136,6 +163,8 @@ const testConnection = async () => {
       console.log('2. Si estás en Render, verifica que la base de datos esté activa');
       console.log('3. Verifica que las credenciales sean correctas');
       console.log('4. Intenta usar INTERNAL_DATABASE_URL en lugar de DATABASE_URL');
+      console.log('5. Si el error es SASL, intenta agregar: DB_SSL_MODE=disable (temporalmente)');
+      console.log('6. Verifica que NODE_VERSION=20.18.0 esté configurado');
     } else {
       console.log('1. Verifica que Docker esté ejecutándose (si usas Docker)');
       console.log('2. Ejecuta: npm run db:start');

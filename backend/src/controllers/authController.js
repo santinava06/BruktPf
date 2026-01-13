@@ -52,6 +52,23 @@ export const register = async (req, res) => {
 
   } catch (error) {
     console.error('Error en registro:', error);
+    
+    // Detectar errores de conexión a la base de datos
+    const isConnectionError = error.name === 'SequelizeConnectionError' || 
+                              error.name === 'ConnectionError' ||
+                              error.message?.includes('SASL') ||
+                              error.message?.includes('ECONNREFUSED') ||
+                              error.message?.includes('connection');
+    
+    if (isConnectionError) {
+      console.error('❌ Error de conexión a la base de datos:', error.message);
+      return res.status(503).json({
+        error: 'Servicio de base de datos no disponible',
+        message: 'No se pudo conectar a la base de datos. Por favor, intenta nuevamente más tarde.',
+        details: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+    
     res.status(500).json({
       error: 'Error interno del servidor',
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
@@ -108,6 +125,23 @@ export const login = async (req, res) => {
 
   } catch (error) {
     console.error('Error en login:', error);
+    
+    // Detectar errores de conexión a la base de datos
+    const isConnectionError = error.name === 'SequelizeConnectionError' || 
+                              error.name === 'ConnectionError' ||
+                              error.message?.includes('SASL') ||
+                              error.message?.includes('ECONNREFUSED') ||
+                              error.message?.includes('connection');
+    
+    if (isConnectionError) {
+      console.error('❌ Error de conexión a la base de datos:', error.message);
+      return res.status(503).json({
+        error: 'Servicio de base de datos no disponible',
+        message: 'No se pudo conectar a la base de datos. Por favor, intenta nuevamente más tarde.',
+        details: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+    
     res.status(500).json({
       error: 'Error interno del servidor',
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
