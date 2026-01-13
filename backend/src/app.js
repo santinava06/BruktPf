@@ -11,23 +11,30 @@ const app = express();
 
 // Configuración de CORS
 const allowedOrigins = process.env.ALLOWED_ORIGINS
-  ? process.env.ALLOWED_ORIGINS.split(',')
+  ? process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim())
   : ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:4173', 'http://127.0.0.1:5173', 'http://127.0.0.1:3000'];
 
 const corsOptions = {
   origin: function (origin, callback) {
-    console.log('🔍 CORS Debug:');
-    console.log('Origin recibido:', origin);
-    console.log('Origins permitidos:', allowedOrigins);
+    // Logs solo en desarrollo
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🔍 CORS Debug:');
+      console.log('Origin recibido:', origin);
+      console.log('Origins permitidos:', allowedOrigins);
+    }
 
-    // Permitir requests sin origin (como mobile apps o Postman)
+    // Permitir requests sin origin (como mobile apps, Postman, o health checks de Render)
     if (!origin) return callback(null, true);
 
     if (allowedOrigins.indexOf(origin) !== -1) {
-      console.log('✅ Origin permitido');
+      if (process.env.NODE_ENV === 'development') {
+        console.log('✅ Origin permitido');
+      }
       callback(null, true);
     } else {
-      console.log('❌ Origin NO permitido');
+      if (process.env.NODE_ENV === 'development') {
+        console.log('❌ Origin NO permitido:', origin);
+      }
       callback(new Error('Not allowed by CORS'));
     }
   },
@@ -63,22 +70,38 @@ app.use('*', (req, res) => {
 });
 
 const PORT = process.env.PORT || 3001;
+const HOST = process.env.HOST || '0.0.0.0';
 
 // Inicializar la aplicación
 const startServer = async () => {
   try {
-    // Sincronizar la base de datos
-    await syncDatabase();
+    // Sincronizar la base de datos (con manejo de errores mejorado)
+    try {
+      await syncDatabase();
+    } catch (dbError) {
+      console.error('⚠️ Advertencia: Error al sincronizar la base de datos:', dbError.message);
+      console.log('🔄 El servidor continuará iniciándose. Verifica la conexión a la base de datos.');
+      // En producción, no detenemos el servidor si hay un error de DB
+      // para permitir que Render pueda hacer health checks
+      if (process.env.NODE_ENV === 'production') {
+        console.log('📝 Nota: En producción, asegúrate de que la base de datos esté configurada correctamente.');
+      }
+    }
 
-    // Iniciar el servidor
-    app.listen(PORT, () => {
+    // Iniciar el servidor en todas las interfaces de red (necesario para Render)
+    app.listen(PORT, HOST, () => {
       console.log(`🚀 Servidor backend ejecutándose en puerto ${PORT}`);
+      console.log(`🌐 Escuchando en: ${HOST}:${PORT}`);
       console.log(`📊 Base de datos: PostgreSQL`);
-      console.log(`🔗 URL: http://localhost:${PORT}`);
-      console.log(`📋 APIs disponibles en: http://localhost:${PORT}/api`);
+      if (process.env.NODE_ENV === 'production') {
+        console.log(`🔗 URL de producción activa`);
+      } else {
+        console.log(`🔗 URL: http://localhost:${PORT}`);
+      }
+      console.log(`📋 APIs disponibles en: /api`);
     });
   } catch (error) {
-    console.error('❌ Error al iniciar el servidor:', error);
+    console.error('❌ Error crítico al iniciar el servidor:', error);
     process.exit(1);
   }
 };
