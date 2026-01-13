@@ -27,21 +27,13 @@ if (connectionString) {
   sequelize = new Sequelize(connectionString, {
     ...commonOptions,
     dialectOptions: {
-      ssl: process.env.NODE_ENV === 'production' ? {
+      ssl: {
         require: true,
-        rejectUnauthorized: false,
-        sslmode: 'require'
-      } : false,
-      // Configuración adicional para conexiones SSL
-      keepalives: 1,
-      keepalivesIdle: 30000,
-      statement_timeout: 30000,
-      // Deshabilitar SCRAM si hay problemas
-      supportBigNumbers: true,
-      bigNumberStrings: true
+        rejectUnauthorized: false
+      }
     }
   });
-} else {
+}else {
   sequelize = new Sequelize(
     process.env.DB_NAME || 'finanzas_familiares',
     process.env.DB_USER || 'postgres',
