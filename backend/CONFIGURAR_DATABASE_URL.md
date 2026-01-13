@@ -80,7 +80,13 @@ Si después de configurar `INTERNAL_DATABASE_URL` sigues viendo el error SASL:
    - Verifica que la URL sea correcta
    - Busca mensajes como: `🔧 Configurando conexión a: ...`
 
-5. **Última opción: Verificar la URL manualmente**:
+5. **Si usas Supabase**:
+   - El error SASL es común con el pooler de Supabase (puerto 5432)
+   - **Solución**: Cambia `DB_PORT` de `5432` a `6543` para usar conexión directa
+   - El pooler puede tener problemas con autenticación SCRAM sobre SSL
+   - La conexión directa (puerto 6543) es más confiable para Supabase
+
+6. **Última opción: Verificar la URL manualmente**:
    - Asegúrate de que la Internal Database URL no tenga caracteres especiales mal codificados
    - Verifica que la contraseña en la URL no tenga caracteres que necesiten encoding
 

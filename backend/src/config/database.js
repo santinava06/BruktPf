@@ -39,14 +39,34 @@ if (hasIndividualVars) {
     password: process.env.DB_PASSWORD
   };
   
-  // Configurar SSL para producción
+  // Detectar el tipo de base de datos
   const isProduction = process.env.NODE_ENV === 'production';
   const isRender = process.env.DB_HOST?.includes('render.com') || 
                    process.env.DB_HOST?.includes('onrender.com') ||
                    process.env.RENDER === 'true';
+  const isSupabase = process.env.DB_HOST?.includes('supabase.com') || 
+                     process.env.DB_HOST?.includes('supabase.co');
   
+  // Para Supabase: usar puerto directo (6543) en lugar del pooler (5432) si está disponible
+  // El pooler a veces tiene problemas con SASL/SCRAM
+  if (isSupabase && process.env.DB_PORT === '5432' && process.env.DB_HOST?.includes('pooler')) {
+    console.log('⚠️ Detectado Supabase pooler (puerto 5432)');
+    console.log('💡 Solución: Cambia DB_PORT a 6543 para usar conexión directa (más confiable)');
+    console.log('   El pooler puede tener problemas con autenticación SCRAM');
+  }
+  
+  // Configurar SSL según el proveedor
   if (process.env.DB_SSL_MODE === 'disable') {
     console.log('🔒 SSL deshabilitado por DB_SSL_MODE=disable');
+  } else if (isSupabase) {
+    // Supabase requiere SSL con configuración específica
+    console.log('🔒 Configurando SSL para Supabase');
+    config.dialectOptions = {
+      ssl: {
+        require: true,
+        rejectUnauthorized: false
+      }
+    };
   } else if (process.env.DB_SSL !== 'false' && (isProduction || isRender)) {
     console.log('🔒 Configurando SSL con rejectUnauthorized: false');
     config.dialectOptions = {
