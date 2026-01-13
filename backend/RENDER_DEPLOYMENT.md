@@ -156,19 +156,26 @@ Si el health check muestra `"database": "connected"`, la conexión está funcion
 
 ### Error: "SASL: SCRAM-SERVER-FINAL-MESSAGE: server signature is missing"
 
-**Causa:** Problema de autenticación SSL/TLS con PostgreSQL en Render.
+**Causa:** Problema conocido de autenticación SSL/TLS con PostgreSQL en Render, especialmente con Node.js 22.
 
-**Soluciones:**
-1. **Usar INTERNAL_DATABASE_URL**: Render proporciona una URL interna que es más confiable. En lugar de `DATABASE_URL`, usa `INTERNAL_DATABASE_URL`:
+**Soluciones (en orden de prioridad):**
+
+1. **Usar Node.js 20 en lugar de 22** (RECOMENDADO):
+   - Este error es un bug conocido con Node.js 22
+   - En Render, ve a tu servicio web → Settings → Environment
+   - Agrega la variable: `NODE_VERSION=20.18.0` (o cualquier versión 20.x)
+   - Esto forzará a Render a usar Node.js 20, que no tiene este problema
+
+2. **Usar INTERNAL_DATABASE_URL**: Render proporciona una URL interna que es más confiable:
    - Ve a tu base de datos PostgreSQL en Render
    - Copia la "Internal Database URL" 
    - Agrega como variable de entorno: `INTERNAL_DATABASE_URL` (tiene prioridad sobre `DATABASE_URL`)
 
-2. **Verificar la versión de Node.js**: El código está configurado para Node.js >= 18.0.0. Render usa Node.js 22 por defecto, lo cual es compatible.
-
 3. **Verificar que la base de datos esté activa**: Asegúrate de que la base de datos PostgreSQL esté en estado "Available" en Render.
 
 4. **Revisar las credenciales**: Verifica que la URL de conexión sea correcta y no esté corrupta.
+
+**Nota:** El código ahora parsea la URL manualmente para evitar este problema, pero usar Node.js 20 es la solución más confiable.
 
 ### Error: "Cannot connect to database"
 

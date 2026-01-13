@@ -32,30 +32,63 @@ if (connectionString) {
                    process.env.RENDER === 'true';
   const isProduction = process.env.NODE_ENV === 'production';
   
-  // Configuración SSL para Render - usar configuración mínima que funciona
-  // El error SASL a menudo se resuelve usando una configuración SSL más simple
-  const config = {
-    ...commonOptions
-  };
-  
-  // En producción o Render, siempre usar SSL
-  if (isProduction || isRender) {
-    config.dialectOptions = {
-      ssl: {
-        require: true,
-        rejectUnauthorized: false
+  // Solución al error SASL con Node.js 22: parsear URL y construir conexión explícitamente
+  // El problema es que Sequelize/pg tiene problemas con SSL cuando se pasa la URL completa
+  try {
+    const url = new URL(connectionString);
+    const dbName = url.pathname.slice(1); // Remover el '/' inicial
+    const dbUser = url.username;
+    const dbPassword = url.password;
+    const dbHost = url.hostname;
+    const dbPort = url.port || '5432';
+    
+    // Construir configuración explícita
+    const config = {
+      ...commonOptions,
+      host: dbHost,
+      port: parseInt(dbPort),
+      database: dbName,
+      username: dbUser,
+      password: dbPassword,
+      dialectOptions: {
+        ssl: (isProduction || isRender) ? {
+          require: true,
+          rejectUnauthorized: false
+        } : process.env.DB_SSL === 'true' ? {
+          require: true,
+          rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false'
+        } : undefined
       }
     };
-  } else if (process.env.DB_SSL === 'true') {
-    config.dialectOptions = {
-      ssl: {
-        require: true,
-        rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false'
+    
+    // Si no hay SSL, eliminar dialectOptions
+    if (!config.dialectOptions.ssl) {
+      delete config.dialectOptions;
+    }
+    
+    sequelize = new Sequelize(dbName, dbUser, dbPassword, config);
+  } catch (parseError) {
+    // Si falla el parseo, usar el método original pero con configuración mejorada
+    console.log('⚠️ No se pudo parsear la URL, usando método alternativo');
+    const config = {
+      ...commonOptions,
+      dialectOptions: {
+        ssl: (isProduction || isRender) ? {
+          require: true,
+          rejectUnauthorized: false
+        } : process.env.DB_SSL === 'true' ? {
+          require: true,
+          rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false'
+        } : undefined
       }
     };
+    
+    if (!config.dialectOptions.ssl) {
+      delete config.dialectOptions;
+    }
+    
+    sequelize = new Sequelize(connectionString, config);
   }
-  
-  sequelize = new Sequelize(connectionString, config);
 } else {
   // Para conexiones locales o con variables individuales
   const config = {
