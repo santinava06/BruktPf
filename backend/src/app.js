@@ -14,29 +14,46 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim())
   : ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:4173', 'http://127.0.0.1:5173', 'http://127.0.0.1:3000'];
 
+// Patrones de dominios permitidos (para Vercel, Netlify, etc.)
+const allowedPatterns = [
+  /^https:\/\/.*\.vercel\.app$/,  // Todos los dominios de Vercel
+  /^https:\/\/.*\.netlify\.app$/,  // Todos los dominios de Netlify
+  /^https:\/\/.*\.onrender\.com$/, // Todos los dominios de Render
+];
+
 const corsOptions = {
   origin: function (origin, callback) {
-    // Logs solo en desarrollo
-    if (process.env.NODE_ENV === 'development') {
-      console.log('🔍 CORS Debug:');
-      console.log('Origin recibido:', origin);
-      console.log('Origins permitidos:', allowedOrigins);
-    }
+    // Logs en desarrollo y producción (para debug de CORS)
+    console.log('🔍 CORS Debug:');
+    console.log('Origin recibido:', origin);
+    console.log('Origins permitidos:', allowedOrigins);
+    console.log('NODE_ENV:', process.env.NODE_ENV);
 
     // Permitir requests sin origin (como mobile apps, Postman, o health checks de Render)
-    if (!origin) return callback(null, true);
-
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      if (process.env.NODE_ENV === 'development') {
-        console.log('✅ Origin permitido');
-      }
-      callback(null, true);
-    } else {
-      if (process.env.NODE_ENV === 'development') {
-        console.log('❌ Origin NO permitido:', origin);
-      }
-      callback(new Error('Not allowed by CORS'));
+    if (!origin) {
+      console.log('✅ Request sin origin permitido (health check, mobile app, etc.)');
+      return callback(null, true);
     }
+
+    // Verificar si el origin está en la lista explícita
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      console.log('✅ Origin permitido (lista explícita):', origin);
+      callback(null, true);
+      return;
+    }
+
+    // Verificar si el origin coincide con algún patrón permitido
+    const matchesPattern = allowedPatterns.some(pattern => pattern.test(origin));
+    if (matchesPattern) {
+      console.log('✅ Origin permitido (patrón):', origin);
+      callback(null, true);
+      return;
+    }
+
+    // Origin no permitido
+    console.log('❌ Origin NO permitido:', origin);
+    console.log('💡 Agrega este origen a ALLOWED_ORIGINS o verifica los patrones permitidos');
+    callback(new Error(`CORS: Origin '${origin}' no permitido`));
   },
   credentials: true,
   optionsSuccessStatus: 200,

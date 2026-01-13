@@ -51,8 +51,9 @@ JWT_EXPIRES_IN=365d
 PORT=10000
 NODE_ENV=production
 
-# CORS (reemplaza con tu URL de frontend)
-ALLOWED_ORIGINS=https://tu-frontend.vercel.app,https://tu-frontend.netlify.app
+# CORS (opcional - el código acepta automáticamente *.vercel.app, *.netlify.app, *.onrender.com)
+# Solo necesitas agregar ALLOWED_ORIGINS si tienes un dominio personalizado
+ALLOWED_ORIGINS=https://tu-dominio-personalizado.com,https://www.tu-dominio.com
 ```
 
 #### Notas Importantes:
@@ -62,7 +63,11 @@ ALLOWED_ORIGINS=https://tu-frontend.vercel.app,https://tu-frontend.netlify.app
   ```bash
   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
   ```
-- **ALLOWED_ORIGINS**: Agrega todas las URLs desde donde se harán requests (frontend, dominios de producción, etc.)
+- **ALLOWED_ORIGINS**: **Opcional** - El código acepta automáticamente dominios de:
+  - `*.vercel.app` (todos los proyectos de Vercel)
+  - `*.netlify.app` (todos los proyectos de Netlify)
+  - `*.onrender.com` (todos los servicios de Render)
+  - Solo necesitas agregar `ALLOWED_ORIGINS` si tienes un dominio personalizado
 
 ### 3. Configurar Health Check (Opcional pero Recomendado)
 
@@ -186,14 +191,22 @@ Si el health check muestra `"database": "connected"`, la conexión está funcion
 
 **Solución:** Ya está corregido en el código. El servidor ahora escucha en `0.0.0.0` en lugar de solo `localhost`.
 
-### Error: "CORS policy"
+### Error: "CORS policy" o "No 'Access-Control-Allow-Origin' header"
 
 **Causa:** El frontend no está en la lista de origins permitidos.
 
-**Solución:** Agrega la URL de tu frontend a la variable `ALLOWED_ORIGINS`:
-```env
-ALLOWED_ORIGINS=https://tu-frontend.vercel.app,https://tu-frontend.netlify.app
-```
+**Soluciones:**
+1. **Si usas Vercel, Netlify o Render**: El código acepta automáticamente estos dominios. Si ves este error:
+   - Verifica que el servicio backend esté desplegado con la última versión del código
+   - Revisa los logs del backend para ver qué origin está siendo rechazado
+   - Los logs mostrarán: `🔍 CORS Debug:` con el origin recibido
+
+2. **Si usas un dominio personalizado**: Agrega la URL a la variable `ALLOWED_ORIGINS`:
+   ```env
+   ALLOWED_ORIGINS=https://tu-dominio-personalizado.com,https://www.tu-dominio.com
+   ```
+
+3. **Verificar logs**: Los logs del backend ahora muestran información detallada sobre CORS en producción para facilitar el debugging.
 
 ### El servicio se reinicia constantemente
 
