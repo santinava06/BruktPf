@@ -3,6 +3,9 @@ import dotenv from 'dotenv';
 import cors from 'cors';
 import router from './routes/index.js';
 import { syncDatabase } from './config/initDatabase.js';
+import dns from 'dns';
+
+dns.setDefaultResultOrder('ipv4first');
 
 // Configuración de variables de entorno
 dotenv.config();
@@ -86,7 +89,7 @@ app.use('*', (req, res) => {
   res.status(404).json({ error: 'Ruta no encontrada' });
 });
 
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
 
 // Inicializar la aplicación
