@@ -2,7 +2,9 @@ import { Sequelize } from 'sequelize';
 
 // Soporte para DATABASE_URL (Render, Heroku, etc.) y opciones comunes
 // Render proporciona INTERNAL_DATABASE_URL para conexiones dentro de la misma región (más confiable)
-const connectionString = process.env.INTERNAL_DATABASE_URL || process.env.DATABASE_URL;
+// Prioridad: Variables individuales > INTERNAL_DATABASE_URL > DATABASE_URL
+const hasIndividualVars = process.env.DB_HOST && process.env.DB_USER && process.env.DB_PASSWORD && process.env.DB_NAME;
+const connectionString = !hasIndividualVars ? (process.env.INTERNAL_DATABASE_URL || process.env.DATABASE_URL) : null;
 
 const commonOptions = {
   dialect: 'postgres',
@@ -24,7 +26,52 @@ const commonOptions = {
 };
 
 let sequelize;
-if (connectionString) {
+
+// Si tenemos variables individuales, usarlas primero (más confiable y evita problemas de parseo)
+if (hasIndividualVars) {
+  console.log('🔍 Usando variables individuales de base de datos');
+  const config = {
+    ...commonOptions,
+    host: process.env.DB_HOST,
+    port: parseInt(process.env.DB_PORT || '5432'),
+    database: process.env.DB_NAME,
+    username: process.env.DB_USER,
+    password: process.env.DB_PASSWORD
+  };
+  
+  // Configurar SSL para producción
+  const isProduction = process.env.NODE_ENV === 'production';
+  const isRender = process.env.DB_HOST?.includes('render.com') || 
+                   process.env.DB_HOST?.includes('onrender.com') ||
+                   process.env.RENDER === 'true';
+  
+  if (process.env.DB_SSL_MODE === 'disable') {
+    console.log('🔒 SSL deshabilitado por DB_SSL_MODE=disable');
+  } else if (process.env.DB_SSL !== 'false' && (isProduction || isRender)) {
+    console.log('🔒 Configurando SSL con rejectUnauthorized: false');
+    config.dialectOptions = {
+      ssl: {
+        require: true,
+        rejectUnauthorized: false
+      }
+    };
+  } else if (process.env.DB_SSL === 'true') {
+    config.dialectOptions = {
+      ssl: {
+        require: true,
+        rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false'
+      }
+    };
+  }
+  
+  sequelize = new Sequelize(
+    process.env.DB_NAME,
+    process.env.DB_USER,
+    process.env.DB_PASSWORD,
+    config
+  );
+  console.log('✅ Sequelize configurado con variables individuales');
+} else if (connectionString) {
   // Para Render y otros servicios en la nube
   // Detectar si es una conexión de Render
   const isRender = connectionString.includes('render.com') || 
@@ -32,15 +79,24 @@ if (connectionString) {
                    process.env.RENDER === 'true';
   const isProduction = process.env.NODE_ENV === 'production';
   
-  // Solución al error SASL con Node.js 22: parsear URL y construir conexión explícitamente
+  // Solución al error SASL: parsear URL y construir conexión explícitamente
   // El problema es que Sequelize/pg tiene problemas con SSL cuando se pasa la URL completa
+  console.log('🔍 Procesando conexión a la base de datos...');
+  console.log(`📋 Usando: ${process.env.INTERNAL_DATABASE_URL ? 'INTERNAL_DATABASE_URL' : 'DATABASE_URL'}`);
+  
   try {
     const url = new URL(connectionString);
     const dbName = url.pathname.slice(1); // Remover el '/' inicial
-    const dbUser = url.username;
-    const dbPassword = url.password;
+    const dbUser = decodeURIComponent(url.username);
+    const dbPassword = decodeURIComponent(url.password);
     const dbHost = url.hostname;
     const dbPort = url.port || '5432';
+    
+    console.log(`🔧 Parseando URL de conexión:`);
+    console.log(`   Host: ${dbHost}`);
+    console.log(`   Port: ${dbPort}`);
+    console.log(`   Database: ${dbName}`);
+    console.log(`   User: ${dbUser}`);
     
     // Construir configuración explícita
     // Solución al error SASL: usar configuración SSL más simple o deshabilitarla si es necesario
@@ -53,21 +109,19 @@ if (connectionString) {
       password: dbPassword
     };
     
-    // Configurar SSL solo si no está explícitamente deshabilitado
-    // El error SASL puede resolverse deshabilitando SSL o usando una configuración más simple
-    if (process.env.DB_SSL !== 'false' && (isProduction || isRender)) {
-      // Intentar con SSL primero, pero con configuración mínima
+    // Configurar SSL - probar sin SSL primero si DB_SSL_MODE=disable
+    if (process.env.DB_SSL_MODE === 'disable') {
+      console.log('🔒 SSL deshabilitado por DB_SSL_MODE=disable');
+      // No agregar dialectOptions para SSL
+    } else if (process.env.DB_SSL !== 'false' && (isProduction || isRender)) {
+      // Intentar con SSL pero con configuración mínima que evita el error SASL
+      console.log('🔒 Configurando SSL con rejectUnauthorized: false');
       config.dialectOptions = {
-        ssl: process.env.DB_SSL_MODE === 'disable' ? false : {
+        ssl: {
           require: true,
           rejectUnauthorized: false
         }
       };
-      
-      // Si DB_SSL_MODE está en 'disable', no agregar dialectOptions
-      if (process.env.DB_SSL_MODE === 'disable') {
-        delete config.dialectOptions;
-      }
     } else if (process.env.DB_SSL === 'true') {
       config.dialectOptions = {
         ssl: {
@@ -77,31 +131,36 @@ if (connectionString) {
       };
     }
     
-    console.log(`🔧 Configurando conexión a: ${dbHost}:${dbPort}/${dbName}`);
-    console.log(`🔒 SSL: ${config.dialectOptions?.ssl ? (config.dialectOptions.ssl === false ? 'disabled' : 'enabled') : 'not configured'}`);
-    
     sequelize = new Sequelize(dbName, dbUser, dbPassword, config);
+    console.log('✅ Sequelize configurado con parámetros explícitos');
   } catch (parseError) {
     // Si falla el parseo, usar el método original pero con configuración mejorada
     console.log('⚠️ No se pudo parsear la URL, usando método alternativo');
+    console.log('⚠️ Error de parseo:', parseError.message);
+    
     const config = {
-      ...commonOptions,
-      dialectOptions: {
-        ssl: (isProduction || isRender) ? {
-          require: true,
-          rejectUnauthorized: false
-        } : process.env.DB_SSL === 'true' ? {
-          require: true,
-          rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false'
-        } : undefined
-      }
+      ...commonOptions
     };
     
-    if (!config.dialectOptions.ssl) {
-      delete config.dialectOptions;
+    // Solo agregar SSL si no está deshabilitado
+    if (process.env.DB_SSL_MODE !== 'disable' && (isProduction || isRender)) {
+      config.dialectOptions = {
+        ssl: {
+          require: true,
+          rejectUnauthorized: false
+        }
+      };
+    } else if (process.env.DB_SSL === 'true') {
+      config.dialectOptions = {
+        ssl: {
+          require: true,
+          rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false'
+        }
+      };
     }
     
     sequelize = new Sequelize(connectionString, config);
+    console.log('✅ Sequelize configurado con URL completa');
   }
 } else {
   // Para conexiones locales o con variables individuales
@@ -133,16 +192,26 @@ if (connectionString) {
 const testConnection = async () => {
   try {
     console.log('🔍 Intentando conectar a PostgreSQL...');
-    if (connectionString) {
-      const url = new URL(connectionString);
-      console.log(`📊 Host: ${url.hostname}:${url.port || '5432'}`);
-      console.log(`📋 Database: ${url.pathname.slice(1)}`);
-      console.log(`👤 User: ${url.username}`);
+    if (hasIndividualVars) {
+      console.log(`📊 Host: ${process.env.DB_HOST}:${process.env.DB_PORT || '5432'}`);
+      console.log(`📋 Database: ${process.env.DB_NAME}`);
+      console.log(`👤 User: ${process.env.DB_USER}`);
+    } else if (connectionString) {
+      try {
+        const url = new URL(connectionString);
+        console.log(`📊 Host: ${url.hostname}:${url.port || '5432'}`);
+        console.log(`📋 Database: ${url.pathname.slice(1)}`);
+        console.log(`👤 User: ${url.username}`);
+      } catch (e) {
+        console.log('📊 Usando DATABASE_URL (no parseable)');
+      }
     }
     
     await sequelize.authenticate();
     console.log('✅ Conexión a PostgreSQL establecida correctamente.');
-    if (connectionString) {
+    if (hasIndividualVars) {
+      console.log('📊 Base de datos: Conexión via variables individuales (DB_HOST, DB_USER, etc.)');
+    } else if (connectionString) {
       const source = process.env.INTERNAL_DATABASE_URL ? 'INTERNAL_DATABASE_URL' : 'DATABASE_URL';
       console.log(`📊 Base de datos: Conexión via ${source}`);
     } else {
