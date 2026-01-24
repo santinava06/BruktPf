@@ -18,16 +18,21 @@ dotenv.config();
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 const GOOGLE_CALLBACK_URL = process.env.GOOGLE_CALLBACK_URL || 'http://localhost:3001/api/auth/google/callback';
-console.log('GOOGLE_CLIENT_ID length:', GOOGLE_CLIENT_ID.length);
-console.log('GOOGLE_CLIENT_ID type:', typeof GOOGLE_CLIENT_ID);
+
+if (GOOGLE_CLIENT_ID) {
+  console.log('GOOGLE_CLIENT_ID length:', GOOGLE_CLIENT_ID.length);
+  console.log('GOOGLE_CLIENT_ID type:', typeof GOOGLE_CLIENT_ID);
+} else {
+  console.warn('⚠️ Advertencia: GOOGLE_CLIENT_ID no configurado');
+}
 
 // Configuración de Passport con credenciales de Google OAuth
 passport.use(
   new GoogleStrategy(
     {
-      clientID: process.env.GOOGLE_CLIENT_ID,
-      clientSecret: 'process.env.GOOGLE_CLIENT_SECRET',
-      callbackURL: 'http://localhost:3001/api/auth/google/callback',
+      clientID: GOOGLE_CLIENT_ID,
+      clientSecret: GOOGLE_CLIENT_SECRET,
+      callbackURL: GOOGLE_CALLBACK_URL,
     },
     async (accessToken, refreshToken, profile, done) => {
       try {
