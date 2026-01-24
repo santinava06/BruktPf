@@ -73,3 +73,8 @@ build/
 # Temporary files
 tmp/
 temp/
+
+.env
+.env.production
+Brukt/.env
+Brukt/.env.production
