@@ -1,0 +1,21 @@
+[33m222dabb[m[33m ([m[1;36mHEAD -> [m[1;32mfix-seguro[m[33m, [m[1;31morigin/master[m[33m, [m[1;31morigin/HEAD[m[33m, [m[1;32mmaster[m[33m)[m 10
+[33mbe89c4f[m 9
+[33m33eec00[m 8
+[33m3a1782c[m 7
+[33mdc789dc[m 6
+[33ma1cf0d8[m 5
+[33m78c56ff[m 4
+[33m229c754[m 3
+[33me379985[m fix updates3
+[33m12f4cf1[m Fix updates2
+[33m57b643a[m Fix updates
+[33m668c7e8[m Correccion
+[33mcc8f155[m Add explicit CORS headers and methods
+[33m202d1b7[m Prod1
+[33mb546ff8[m Fix url2
+[33me842483[m URL for Vercel deployment
+[33mdedf803[m frontend debugging
+[33m540744c[m CORS debugging
+[33m5a069d0[m Fix API URL
+[33m725dd33[m Configure frontend for Vercel deployment
+[33mfb60951[m Firts Commit
