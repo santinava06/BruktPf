@@ -21,13 +21,10 @@ import {
   Edit as EditIcon,
   Save as SaveIcon,
   Cancel as CancelIcon,
-  AccountCircle as AccountCircleIcon,
-  Google as GoogleIcon,
-  Link as LinkIcon,
-  LinkOff as UnlinkIcon
+  AccountCircle as AccountCircleIcon
 } from '@mui/icons-material';
 import { useAuth } from '../hooks/useAuth';
-import { updateProfile, getGoogleAccount, unlinkGoogleAccount, getGoogleAuthUrl } from '../services/auth.js';
+import { updateProfile } from '../services/auth.js';
 
 function Profile() {
   const { user, updateUser } = useAuth();
@@ -39,10 +36,6 @@ function Profile() {
     email: user?.email || ''
   });
 
-  // Estado para cuenta Google
-  const [googleAccount, setGoogleAccount] = useState(null);
-  const [loadingGoogle, setLoadingGoogle] = useState(false);
-
   // Actualizar formData cuando el usuario cambie
   useEffect(() => {
     setFormData({
@@ -53,49 +46,6 @@ function Profile() {
     });
   }, [user]);
 
-  // Cargar información de cuenta Google al montar el componente
-  useEffect(() => {
-    loadGoogleAccount();
-  }, []);
-
-  const loadGoogleAccount = async () => {
-    try {
-      setLoadingGoogle(true);
-      const data = await getGoogleAccount();
-      setGoogleAccount(data);
-    } catch (error) {
-      console.error('Error cargando cuenta Google:', error);
-      // No mostrar error al usuario si no hay cuenta Google
-      setGoogleAccount({ hasGoogleAccount: false });
-    } finally {
-      setLoadingGoogle(false);
-    }
-  };
-
-  const handleUnlinkGoogle = async () => {
-    if (!window.confirm('¿Estás seguro de que quieres desvincular tu cuenta de Google?')) {
-      return;
-    }
-
-    try {
-      setLoadingGoogle(true);
-      await unlinkGoogleAccount();
-      setGoogleAccount({ hasGoogleAccount: false });
-      setSnackbar({
-        open: true,
-        message: 'Cuenta de Google desvinculada exitosamente',
-        severity: 'success'
-      });
-    } catch (error) {
-      setSnackbar({
-        open: true,
-        message: error.message || 'Error al desvincular cuenta Google',
-        severity: 'error'
-      });
-    } finally {
-      setLoadingGoogle(false);
-    }
-  };
   const [snackbar, setSnackbar] = useState({
     open: false,
     message: '',
@@ -421,91 +371,6 @@ function Profile() {
           </Paper>
         </Grid>
 
-        {/* Google Account Section */}
-        <Grid item xs={12}>
-          <Paper
-            sx={{
-              p: 4,
-              borderRadius: 3,
-              boxShadow: '0 4px 20px rgba(0, 0, 0, 0.1)',
-              border: '1px solid rgba(19, 58, 26, 0.1)'
-            }}
-          >
-
-            {loadingGoogle ? (
-              <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', py: 4 }}>
-                <CircularProgress size={40} />
-                <Typography sx={{ ml: 2 }}>Cargando información de Google...</Typography>
-              </Box>
-            ) : googleAccount?.hasGoogleAccount ? (
-              <Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                  <GoogleIcon sx={{ color: '#4285F4', mr: 1 }} />
-                  <Typography variant="body1" sx={{ fontWeight: 500, color: '#133A1A', fontSize: '1.1rem' }}>
-                    Conectado con Google
-                  </Typography>
-                </Box>
-
-                <Box sx={{ ml: 4, mb: 3 }}>
-                  <Typography variant="body2" sx={{ color: 'text.secondary', mb: 1 }}>
-                    <strong>Email:</strong> {googleAccount.googleAccount?.email}
-                  </Typography>
-                  <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                    <strong>Nombre:</strong> {googleAccount.googleAccount?.displayName}
-                  </Typography>
-                </Box>
-
-                <Box sx={{ display: 'flex', gap: 2 }}>
-                  <Button
-                    variant="outlined"
-                    startIcon={<UnlinkIcon />}
-                    onClick={handleUnlinkGoogle}
-                    disabled={loadingGoogle}
-                    sx={{
-                      borderColor: '#d32f2f',
-                      color: 'white !important',
-                      '&:hover': {
-                        bgcolor: 'rgba(211, 47, 47, 0.04)',
-                        borderColor: '#b71c1c'
-                      }
-                    }}
-                  >
-                    Desvincular Cuenta
-                  </Button>
-                </Box>
-              </Box>
-            ) : (
-              <Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                  <GoogleIcon sx={{ color: '#dadce0', mr: 1 }} />
-                  <Typography variant="body1" sx={{ color: 'text.secondary' }}>
-                    No hay cuenta de Google conectada
-                  </Typography>
-                </Box>
-
-                <Typography variant="body2" sx={{ color: 'text.secondary', mb: 3 }}>
-                  Conecta tu cuenta de Google para facilitar el inicio de sesión.
-                </Typography>
-
-                <Button
-                  variant="outlined"
-                  startIcon={<LinkIcon />}
-                  onClick={() => window.location.href = getGoogleAuthUrl()}
-                  sx={{
-                    borderColor: '#4285F4',
-                    color: 'white !important',
-                    '&:hover': {
-                      bgcolor: 'rgba(66, 133, 244, 0.04)',
-                      borderColor: '#3367D6'
-                    }
-                  }}
-                >
-                  Conectar con Google
-                </Button>
-              </Box>
-            )}
-          </Paper>
-        </Grid>
       </Grid>
 
       <Snackbar

@@ -12,9 +12,8 @@ import {
   IconButton
 } from '@mui/material';
 import { Visibility, VisibilityOff, Email, Lock, Person } from '@mui/icons-material';
-import GoogleIcon from '@mui/icons-material/Google';
 import { useAuth } from '../hooks/useAuth';
-import { register as registerService, getGoogleAuthUrl } from '../services/auth.js';
+import { register as registerService } from '../services/auth.js';
 import logo from '../assets/logoSinFondo.png';
 
 function Register() {
@@ -64,10 +63,6 @@ function Register() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleGoogleLogin = () => {
-    window.location.href = getGoogleAuthUrl();
   };
 
   return (
@@ -252,27 +247,6 @@ function Register() {
             >
               {loading ? 'Creando cuenta...' : 'Crear Cuenta'}
             </Button>
-
-            <Box sx={{ mb: 3 }}>
-              <Button
-                fullWidth
-                variant="outlined"
-                onClick={handleGoogleLogin}
-                startIcon={<GoogleIcon />}
-                sx={{
-                  py: 1.5,
-                  borderColor: '#dadce0',
-                  color: 'white !important',
-                  bgcolor: '#fff',
-                  '&:hover': {
-                    bgcolor: '#f8f9fa',
-                    borderColor: '#dadce0'
-                  }
-                }}
-              >
-                Continuar con Google
-              </Button>
-            </Box>
 
             <Box sx={{ textAlign: 'center' }}>
               <Typography variant="body2" color="text.secondary">

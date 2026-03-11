@@ -33,11 +33,11 @@ function UserProfileMenu() {
     setAnchorEl(null);
   };
 
-  const handleLogout = () => {
-    handleMenuClose();
-    logout();
-    navigate('/');
-  };
+const handleLogout = () => {
+  handleMenuClose();
+  logout();
+  navigate('/login', { replace: true });
+};
 
   const handleProfile = () => {
     handleMenuClose();

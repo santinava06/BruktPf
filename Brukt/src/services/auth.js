@@ -4,10 +4,6 @@ const API_URL = `${BASE_URL}/auth`;
 
 console.log('🔐 Auth Service - API_URL:', API_URL);
 
-export function getGoogleAuthUrl() {
-  return `${API_URL}/google`;
-}
-
 export async function login(email, password) {
   try {
     console.log('🔍 Enviando petición de login a:', `${API_URL}/login`);
@@ -191,56 +187,4 @@ export async function updateProfile(profileData) {
   }
 }
 
-// Obtener información de la cuenta Google asociada
-export async function getGoogleAccount() {
-  try {
-    const token = getToken();
-    if (!token) {
-      throw new Error('No hay token de autenticación');
-    }
-
-    const res = await fetch(`${API_URL}/google-account`, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${token}`
-      },
-    });
-
-    if (!res.ok) {
-      const errorData = await res.json().catch(() => ({}));
-      throw new Error(errorData.error || 'Error al obtener cuenta Google');
-    }
-
-    return await res.json();
-  } catch (error) {
-    console.error('Error al obtener cuenta Google:', error);
-    throw error;
-  }
-}
-
-// Desvincular cuenta de Google
-export async function unlinkGoogleAccount() {
-  try {
-    const token = getToken();
-    if (!token) {
-      throw new Error('No hay token de autenticación');
-    }
-
-    const res = await fetch(`${API_URL}/google-account`, {
-      method: 'DELETE',
-      headers: {
-        'Authorization': `Bearer ${token}`
-      },
-    });
-
-    if (!res.ok) {
-      const errorData = await res.json().catch(() => ({}));
-      throw new Error(errorData.error || 'Error al desvincular cuenta Google');
-    }
-
-    return await res.json();
-  } catch (error) {
-    console.error('Error al desvincular cuenta Google:', error);
-    throw error;
-  }
-} 
+// Nota: funciones relacionadas con Google OAuth fueron eliminadas.

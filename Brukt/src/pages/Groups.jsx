@@ -358,21 +358,25 @@ function Groups() {
                 const receiverId = payment.receiver?.id || payment.receiver_id;
 
                 if (payerId == user?.id) {
-                  // Yo pagué a alguien -> Disminuye lo que debo (netAmount aumenta)
+                  // Yo pagué a alguien -> disminuye lo que le debo a esa persona
                   if (!netDebts[receiverId]) {
                     const receiverMember = members.find(m => (m.user?.id || m.id) == receiverId);
                     const receiverName = receiverMember?.user?.nombre || receiverMember?.nombre || 'Usuario';
                     netDebts[receiverId] = { amount: 0, name: receiverName };
                   }
-                  netDebts[receiverId].amount += amount;
+                  // Si antes tenía un netDebts[receiverId] positivo (yo le debía),
+                  // restar el pago lo acerca a 0 (reduce la deuda).
+                  netDebts[receiverId].amount -= amount;
                 } else if (receiverId == user?.id) {
-                  // Alguien me pagó -> Disminuye lo que me deben (netAmount disminuye)
+                  // Alguien me pagó -> disminuye lo que esa persona me debe
                   if (!netDebts[payerId]) {
                     const payerMember = members.find(m => (m.user?.id || m.id) == payerId);
                     const payerName = payerMember?.user?.nombre || payerMember?.nombre || 'Usuario';
                     netDebts[payerId] = { amount: 0, name: payerName };
                   }
-                  netDebts[payerId].amount -= amount;
+                  // Si antes netDebts[payerId] era negativo (esa persona me debía),
+                  // sumar el pago lo acerca a 0 (reduce lo que me debe).
+                  netDebts[payerId].amount += amount;
                 }
               });
             }

@@ -21,7 +21,6 @@ const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
 const ResetPassword = lazy(() => import('./pages/ResetPassword'));
 const Login = lazy(() => import('./pages/Login'));
 const Register = lazy(() => import('./pages/Register'));
-const AuthCallback = lazy(() => import('./pages/AuthCallback'));
 const LandingPage = lazy(() => import('./pages/LandingPage'));
 
 // Loading component
@@ -103,7 +102,6 @@ function AppRoutes() {
           <Route path="/register" element={<PageTransition><Register /></PageTransition>} />
           <Route path="/forgot-password" element={<PageTransition><ForgotPassword /></PageTransition>} />
           <Route path="/reset-password" element={<PageTransition><ResetPassword /></PageTransition>} />
-          <Route path="/auth/callback" element={<PageTransition><AuthCallback /></PageTransition>} />
           <Route path="/" element={<HomeRoute><PageTransition><LandingPage /></PageTransition></HomeRoute>} />
           <Route path="/groups" element={<PrivateRoute><PageTransition><Groups /></PageTransition></PrivateRoute>} />
           <Route path="/groups/:groupId/expenses" element={<PrivateRoute><PageTransition><GroupExpenses /></PageTransition></PrivateRoute>} />

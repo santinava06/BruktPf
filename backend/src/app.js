@@ -1,10 +1,6 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import cors from 'cors';
-import passport from 'passport';
-import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
-import session from 'express-session';
-import User from './models/user.js';
 import router from './routes/index.js';
 import { syncDatabase } from './config/initDatabase.js';
 import dns from 'dns';
@@ -13,83 +9,6 @@ dns.setDefaultResultOrder('ipv4first');
 
 // Configuración de variables de entorno
 dotenv.config();
-
-// Fallback para variables de Google OAuth si dotenv no funciona
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
-const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
-const GOOGLE_CALLBACK_URL = process.env.GOOGLE_CALLBACK_URL || 'http://localhost:3001/api/auth/google/callback';
-
-if (GOOGLE_CLIENT_ID) {
-  console.log('GOOGLE_CLIENT_ID length:', GOOGLE_CLIENT_ID.length);
-  console.log('GOOGLE_CLIENT_ID type:', typeof GOOGLE_CLIENT_ID);
-} else {
-  console.warn('⚠️ Advertencia: GOOGLE_CLIENT_ID no configurado');
-}
-
-// Configuración de Passport con credenciales de Google OAuth
-passport.use(
-  new GoogleStrategy(
-    {
-      clientID: GOOGLE_CLIENT_ID,
-      clientSecret: GOOGLE_CLIENT_SECRET,
-      callbackURL: GOOGLE_CALLBACK_URL,
-    },
-    async (accessToken, refreshToken, profile, done) => {
-      try {
-        // Buscar usuario existente por google_id
-        let user = await User.findOne({ where: { google_id: profile.id } });
-
-        if (user) {
-          // Usuario ya existe, actualizar información si es necesario
-          return done(null, user);
-        }
-
-        // Buscar usuario por email
-        const existingUser = await User.findOne({ where: { email: profile.emails[0].value } });
-
-        if (existingUser) {
-          // Usuario existe con este email, vincular cuenta de Google
-          existingUser.google_id = profile.id;
-          await existingUser.save();
-          return done(null, existingUser);
-        }
-
-        // Crear nuevo usuario
-        const names = profile.displayName.split(' ');
-        const firstName = names[0] || '';
-        const lastName = names.slice(1).join(' ') || '';
-
-        user = await User.create({
-          nombre: firstName,
-          apellido: lastName,
-          email: profile.emails[0].value,
-          google_id: profile.id,
-          password: Math.random().toString(36), // Password dummy, no se usará
-          username: null // Se puede generar después si es necesario
-        });
-
-        return done(null, user);
-      } catch (error) {
-        console.error('Error en estrategia Google OAuth:', error);
-        return done(error, null);
-      }
-    }
-  )
-);
-
-// Serialización para sesiones
-passport.serializeUser((user, done) => {
-  done(null, user.id);
-});
-
-passport.deserializeUser(async (id, done) => {
-  try {
-    const user = await User.findByPk(id);
-    done(null, user);
-  } catch (error) {
-    done(error, null);
-  }
-});
 
 const app = express();
 
@@ -147,21 +66,6 @@ const corsOptions = {
 app.use(cors(corsOptions));
 
 app.use(express.json());
-
-// Configuración de sesiones para Passport
-app.use(session({
-  secret: process.env.JWT_SECRET || 'supersecretkey123456789',
-  resave: false,
-  saveUninitialized: false,
-  cookie: {
-    secure: false, // En desarrollo, false; en producción, true con HTTPS
-    maxAge: 24 * 60 * 60 * 1000 // 24 horas
-  }
-}));
-
-// Inicializar Passport
-app.use(passport.initialize());
-app.use(passport.session());
 
 // Registrar rutas con prefijo /api
 app.use('/api', router);
